@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/components/datatable.tsx","./src/components/sidebar.tsx","./src/components/statebadge.tsx","./src/pages/changesetdetail.tsx","./src/pages/changesetlist.tsx","./src/pages/newchangeset.tsx","./src/pages/tablebrowser.tsx","./vite.config.ts"],"version":"5.9.3"}
