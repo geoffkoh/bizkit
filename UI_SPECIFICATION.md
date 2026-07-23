@@ -13,7 +13,7 @@
 |---|---|---|
 | **Maker** | `submit` (+comment/view) | Browse a table, draft changes from the grid, track their changesets through review, rework after rejection/expiry |
 | **Checker** | `approve`/`reject`/`apply` (+comment/view) | Work the review queue, inspect diffs against current data, decide with reasons, retry failed applies |
-| **Reader** (D38) | `view` only | Look up current configuration values; see what changes are pending/decided (transparency); no commenting, no actions |
+| **Reader** (D38) | `view` only | Look up current configuration values; see what changes are pending/decided **and the full audit trail** (transparency); no commenting, no actions. This is also the **auditor** persona — there is deliberately no separate auditor role (D43) |
 | **Admin** | grant management + view | Manage grants (store-adapter deployments only) |
 
 Users commonly hold **unions** of these per table (D28): the UI is one
@@ -30,9 +30,16 @@ state semantics.
 
 - **Typography**: system stack (`system-ui, -apple-system, sans-serif`);
   base 15px/1.5; page title 1.35rem/700; section 1rem/650; table header
-  0.8rem/600 uppercase +0.04em; metadata 0.8–0.85rem.
-- **Spacing**: 4px scale (4/8/12/16/24/32); content max-width none in
-  the work area (grids want width), 44rem for forms/prose.
+  0.8rem/600 uppercase +0.04em; metadata 0.8–0.85rem. **Numeric/ID
+  columns use `font-variant-numeric: tabular-nums`** so values align
+  vertically in the grid — the single highest-leverage typographic
+  detail for a data-dense UI reading as "crafted" rather than "browser
+  default".
+- **Spacing**: 4px scale — `space-1`=4 `space-2`=8 `space-3`=12
+  `space-4`=16 `space-6`=24 `space-8`=32 `space-10`=40 (px); content
+  max-width none in the work area (grids want width), 44rem for
+  forms/prose. Component padding is always a scale value, never a
+  one-off pixel figure.
 - **Radius**: 6px (controls), 10px (panels/cards), 999px (badges/chips).
 - **Tables are cards**: every data table carries a 1px `--border`
   outline with 10px rounded corners (`border-collapse: separate` +
@@ -40,14 +47,32 @@ state semantics.
   cell, none on the last column), a subtly tinted header row, and row
   hover tint — the "professional grid" treatment; op tints (D39 basket)
   override hover. Utility columns are fixed-width: the grid's op-marker
-  column is 2.6rem, action columns shrink to content.
+  column is 2.6rem, action columns shrink to content. Grids themselves
+  stay **flat** (border only, `shadow-none`) — elevation is reserved for
+  things that float above the page (§2.2), so the resting UI never looks
+  busier than the data it holds.
 - **All list tables share one component** (`DataTable`): sortable
   headers with ▲/▼ and draggable column resizing, identical to the rows
   grid — used by the Queue and the table browser's Changesets tab so
   every table behaves consistently.
+- **Iconography**: one consistent outline icon set (Feather/Lucide-style —
+  24×24 grid rendered at 16–18px, 1.75px stroke, round caps/joins,
+  `currentColor` so icons inherit text/muted/state color automatically
+  wherever they're used). **Emoji are never UI chrome** — no ✎/👁/☰/⋮/✕
+  as literal glyphs; those become icons (`pencil`, `eye`, `sidebar`,
+  `more-vertical`, `close`) from the same set as tree disclosure
+  chevrons, sort arrows, and search. One shared sprite/icon component,
+  not ad hoc per-screen choices — an inconsistent icon weight or style
+  reads as unpolished as an inconsistent shadow would.
 - **Color**: light + dark via `prefers-color-scheme`; neutral surfaces
   (`--bg`, `--fg`, `--muted`, `--border`), one accent (`--accent`,
-  blue) reserved for navigation/primary actions.
+  blue) reserved for navigation/primary actions. Two additions for
+  layering and accessibility, same rules (light/dark pair, never
+  repurposed): `--bg-hover` (row/list-item hover tint — a step between
+  `--bg` and `--border`, distinct from the semantic op/state tints) and
+  `--focus-ring` (the accent at reduced opacity, e.g.
+  `color-mix(in srgb, var(--accent) 45%, transparent)`) for the focus
+  treatment in §2.4.
 - **Semantic state colors** (fixed; never repurposed):
 
 | Token | States/ops | Light value family |
@@ -59,7 +84,66 @@ state semantics.
 | state-warning | expired, overdue deadlines; op `update`; self-approval badge | amber |
 | op-insert | op `insert` | green |
 
-### 2.2 Fixed integrity signals (non-negotiable, from the system spec)
+### 2.2 Elevation
+
+Airtable/Linear-grade UIs read as "crafted" largely because shadow is
+used sparingly and consistently to mean exactly one thing: *this surface
+is floating above the page*. Four steps, applied by role — never picked
+ad hoc per component:
+
+| Token | Used for | Light | Dark |
+|---|---|---|---|
+| `shadow-none` | Grids, cards, sidebar, at-rest surfaces | none (border only) | none (border only) |
+| `shadow-sm` | Hovered row-action buttons, dragged column resizer | `0 1px 2px rgba(0,0,0,.06)` | none — use a 1px lighter `--border` highlight instead |
+| `shadow-md` | Dropdowns, popovers, tooltips, the column rule-dot tooltip | `0 4px 12px rgba(0,0,0,.12)` | `0 4px 12px rgba(0,0,0,.4)` + 1px `--border` |
+| `shadow-lg` | Basket review slide-over, modals/confirmations | `0 8px 30px rgba(0,0,0,.16)` | `0 8px 30px rgba(0,0,0,.5)` + 1px `--border` |
+
+Dark theme leans on the 1px border more than the shadow (shadows read
+as muddy haze on dark surfaces, not depth) — this is a deliberate
+light/dark asymmetry, not an oversight.
+
+### 2.3 Motion
+
+Motion exists to communicate cause → effect, never for decoration.
+Three durations, two easings — same rule as elevation, picked by role:
+
+| Token | Value | Used for |
+|---|---|---|
+| `duration-fast` | 100ms | Hover/press tints, row-action fade-in, checkbox/toggle |
+| `duration-base` | 160ms | Dropdown/popover open-close, tab switch, tooltip |
+| `duration-slow` | 240ms | Slide-over panel enter/exit, modal enter/exit |
+| `easing-enter` | `cubic-bezier(0.2, 0, 0, 1)` | Anything appearing (ease-out — fast start, gentle stop) |
+| `easing-exit` | `cubic-bezier(0.4, 0, 1, 1)` | Anything disappearing (ease-in) |
+
+- Loading skeletons shimmer on a slow (1.5s+), low-contrast loop —
+  never the attention-grabbing kind.
+- Mutations stay non-optimistic (§6) but the *affordance* still responds
+  instantly (button press state, disabled state) so the UI never feels
+  inert while a request is in flight.
+- `prefers-reduced-motion: reduce` disables all non-essential
+  transitions (panel slides, shimmer) — state changes still happen,
+  just as instant cuts.
+
+### 2.4 Interaction states
+
+Every interactive element defines all four states below using the
+tokens above — an element with only a "rest" and a "click handler" is
+an unfinished component, not a smaller one:
+
+- **Rest**: the default, per component spec.
+- **Hover**: `--bg-hover` tint (rows/menu items) or `shadow-sm` +
+  slight `--border` darkening (buttons/cards), transitioning over
+  `duration-fast`. Row-hover-reveal icons (edit pencil, row menu — D39)
+  fade in over `duration-fast`, not a hard toggle.
+- **Focus-visible**: a 2px `--focus-ring` outline with 2px offset on
+  every focusable element, keyboard or pointer-triggered per the
+  `:focus-visible` semantics — never suppressed with
+  `outline: none` without a replacement.
+- **Disabled**: 50% opacity, `cursor: not-allowed`, no hover/press
+  response; disabled controls still explain *why* on hover/tooltip
+  where the reason isn't obvious (e.g. "cap reached").
+
+### 2.5 Fixed integrity signals (non-negotiable, from the system spec)
 
 - State badge + revision on every changeset surface.
 - `SELF-APPROVED` badge on qualifying decisions (D26/D27) — amber,
@@ -77,16 +161,19 @@ state semantics.
 │ SIDEBAR       │  WORK AREA                                     │
 │               │                                                │
 │ WORKBENCH     │  (routed screen)                               │
-│  ◦ Queue  (3) │                                                │
+│  Queue    (3) │                                                │
 │               │                                                │
 │ TABLES        │                                                │
-│  sample       │                                                │
-│   ◦ fx_rates ✎│                                                │
-│   ◦ limits  ✎ │                                                │
-│   ◦ audit_log👁│                                               │
+│  ▾ postgres-prod                                                │
+│    ▾ sample   │                                                │
+│      fx_rates    [pencil]                                      │
+│      limits      [pencil]                                      │
+│      audit_log   [eye]                                         │
+│    ▸ risk     │                                                │
+│  ▸ snowflake-eu                                                 │
 │               │                                                │
 │ ADMIN         │                                                │
-│  ◦ Grants     │  (store-adapter deployments only)              │
+│  Grants       │  (store-adapter deployments only)              │
 └───────────────┴────────────────────────────────────────────────┘
 ```
 
@@ -99,18 +186,50 @@ state semantics.
   stays neutral.
   - **Workbench**: Queue, with a count badge = changesets awaiting *this
     user's* review (submitted ∧ maker ≠ me ∧ approve right).
-  - **Tables**: grouped by target (backend profile name), listing every
-    table the caller can `view` (D38). Affordance markers: ✎ (can
-    submit) vs 👁 (read-only). Active table highlighted. This satisfies
-    "navigation shows the tables I can submit requests for" while also
-    giving readers their view-only list.
+  - **Tables: a collapsible tree**, mirroring the `(backend, schema,
+    table)` scope model (SPECIFICATION.md §3.2) exactly rather than
+    inventing a separate navigation shape: **backend → schema → table**,
+    listing every table the caller can `view` (D38). **Progressive
+    disclosure**: the schema level only renders when a backend exposes
+    more than one schema to this caller — a single-schema backend goes
+    straight from backend to its tables, so the common case (one
+    schema) never carries a redundant middle node. Backend and schema
+    nodes are native disclosure widgets (expand/collapse, keyboard
+    operable) with a `chevron` icon and a muted `server`/`folder` icon;
+    expand/collapse state persists per node in localStorage alongside
+    the width/collapse prefs above. Table leaves carry the affordance
+    icon — `pencil` (can submit) or `eye` (read-only) — **never the
+    literal ✎/👁 emoji** (§2.1 Iconography). Active table highlighted.
+    **Names too long for the sidebar's current width** (user-resized
+    narrower, or just a long name) use the same truncate + `shadow-md`
+    hover-tooltip component as long grid cells (§4.1) — one shared
+    component, not a second implementation of the same problem.
+    This satisfies "navigation shows the tables I can submit requests
+    for" while also giving readers their view-only list, and scales to
+    targets that expose many schemas (or many databases-as-schemas)
+    without flattening them into one long alphabetical list.
   - **Admin**: grants management; hidden unless the store access adapter
     is active and the caller holds admin.
-- **Topbar**: brand (→ Queue); identity control (dev: editable
+- **Topbar**: brand (→ Queue); a **command palette trigger** (search
+  icon + "Search…" + a `⌘K`/`Ctrl+K` hint, styled as a subdued input-like
+  pill, never a loud button); identity control (dev: editable
   acting-as picker; production: display-only, from auth); readiness dot
   with config fingerprint tooltip.
+- **Command palette** (`⌘K`/`Ctrl+K`, or the topbar trigger): a centered
+  overlay (`shadow-lg`, fade+scale via `duration-base`/`easing-enter`,
+  same scrim treatment as the basket slide-over) with a search input and
+  live-filtered, grouped results — **Tables** (icon = the same
+  pencil/eye affordance markers as the sidebar tree, with the
+  backend/schema breadcrumb as secondary text), **Changesets** (state
+  badge + title), **Actions** (e.g. "Go to Queue"). Arrow keys move a
+  selection, Enter activates it, Esc or a scrim click closes it — it is
+  a second index onto the same navigable set as the sidebar tree and
+  queue, not a separate feature with its own data. Empty/no-match state
+  follows the one-sentence convention (§6).
 - Sidebar contents come from `GET /api/v1/tables` (server-computed
-  affordances — D25).
+  affordances — D25); the response's `schema` field drives the tree
+  grouping, so a caller who can see a table in a normally-hidden schema
+  still gets a (single-item) schema node rather than a silent gap.
 
 ## 4. Screens
 
@@ -128,7 +247,7 @@ sort/filter/pagination model and manual mode):
 - Columns from `…/columns` (introspection); values from `…/rows`.
 - **Config-table scale (≤500 rows)**: one fetch, then client-side
   **search** (free-text across all columns), **sort** (click a column
-  header; ▲/▼ indicator), and pagination (50/page).
+  header), and pagination (50/page).
 - **Large tables (>500 rows)**: TanStack manual mode — pagination,
   search, and sort all run **server-side** via the rows endpoint's
   `q`/`sort`/`direction` params (in-process on the API tier;
@@ -136,8 +255,31 @@ sort/filter/pagination model and manual mode):
   Push-down into `TargetBackend.read_rows` remains the roadmap item for
   genuinely huge tables; @tanstack/react-virtual is the follow-on for
   very tall grids.
+- **Sort is one affordance regardless of where it runs**: every sortable
+  header shows the same three-state icon (neutral `sort` → accent
+  `arrow-up` → accent `arrow-down` → back to neutral), client- or
+  server-backed. The *only* visible difference on a server-sorted table
+  is that clicking swaps the icon for a small `spinner` while the
+  request is in flight, and the other headers dim/ignore clicks until
+  it resolves (prevents a second sort request racing the first) — a
+  maker should never need to know or care which mode a given table is
+  in.
 - **Columns are resizable**: drag the header's right edge (TanStack
-  column sizing, 70–600px, accent-highlighted handle).
+  column sizing, 70–600px, accent-highlighted handle, `cursor:
+  col-resize`). Manual widening is the maker's own remedy for a column
+  they want to read in full without hovering (below).
+- **Long cell/header content never grows the row or breaks the grid**:
+  text truncates with an ellipsis at the column's current width
+  (resized width wins over any default). A truncated cell shows its
+  full value in a `shadow-md` hover tooltip (§2.2) — cheap, read-only
+  inspection without entering edit mode. Editing a long-text column
+  (row edit, D39) renders a multi-line `textarea` instead of a
+  single-line input, so the full value is visible and editable at once.
+  This is a deliberate three-tier answer (truncate → hover for the full
+  value → widen the column or edit for real), not a single trick that
+  only half-solves it; it's also the intended interim answer to the
+  row-level drill-in question in §8 — a record-detail page can replace
+  the tooltip tier later without changing the other two.
 - **Pagination lives top-right of the grid**, in the toolbar row with
   search (left) and drafting actions — visible before scrolling, per
   the standard enterprise-grid pattern: ‹ **editable page-number
@@ -234,18 +376,33 @@ the UX is correct on day one.)
 
 ## 6. Patterns
 
-- **Loading**: skeleton rows for grids/lists; inline "Loading…" for
-  panels. **Empty**: one sentence + the next action.
+- **Loading**: skeleton rows for grids/lists (shimmer per §2.3); inline
+  "Loading…" for panels. **Empty**: one sentence + the next action.
 - **Errors**: inline near the triggering control; global fetch failures
   as a dismissible banner. 403 message pattern: "The server declined:
   {detail}" — affordances can be stale; enforcement is server-side.
 - **Mutations**: TanStack Query invalidate-on-success (no optimistic
-  state transitions — workflow truth comes from the server).
+  state transitions — workflow truth comes from the server); button
+  press/disabled states (§2.4) still respond instantly so the UI
+  doesn't feel inert while a request is in flight.
+- **Toasts**: every successful or failed workflow mutation (submit,
+  approve, reject, save draft, discard) confirms via a transient toast
+  — top-right stack, `shadow-md`, slide+fade in on `duration-base`,
+  auto-dismiss after ~4s with a shrinking progress bar, always
+  individually dismissible. Toasts are a *supplement* to inline
+  errors/banners (§ above), never a replacement for them — a 403 still
+  gets its inline message next to the control that triggered it; the
+  toast is just the ambient "it worked / it didn't" signal for actions
+  whose result isn't otherwise visible on screen.
 - **Destructive confirmations**: Withdraw and Discard-basket confirm
   inline (two-click); Reject is gated by its required reason instead.
-- **Keyboard/a11y**: visible focus rings; grids navigable by arrow keys
-  (later phase); badges carry `aria-label` (e.g. "state: submitted");
-  AA contrast in both themes.
+- **Floating surfaces** (dropdowns, popovers, tooltips, the basket
+  review slide-over, modals) use the elevation and motion tokens in
+  §2.2/§2.3 — never a one-off shadow or transition duration.
+- **Keyboard/a11y**: every focusable element shows the `--focus-ring`
+  treatment (§2.4), never suppressed without a replacement; grids
+  navigable by arrow keys (later phase); badges carry `aria-label`
+  (e.g. "state: submitted"); AA contrast in both themes.
 - **Responsive**: designed for ≥1100px; below that the sidebar
   collapses to icons; mobile is out of scope (governance work is a
   desktop job).
