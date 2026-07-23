@@ -35,10 +35,13 @@ them divergent.
 - **Checker**: the user who approves or rejects it. A maker can never check
   their own changeset.
 - **Role / Action / Scope / Grant**: explicit access control. Roles
-  (`maker`, `checker`, `reader` — view-only, spec D38 — and `admin`)
+  (`maker`, `checker`, `reader` — view-only, spec D38; also the auditor
+  persona, no separate `auditor` role per D43 — and `admin`)
   grant actions (`submit`, `approve`,
   `reject`, `apply`, `comment`, `view`) on scopes — `(backend, schema,
-  table)` patterns with `*` wildcards — via grants. Authorization goes
+  table)` patterns with `*` wildcards — via grants. `view` deliberately
+  covers both table data and the table's changesets/decisions/audit
+  trail (one action, not split — D43). Authorization goes
   through the `AccessPolicy` port; adapters are file-backed grants from
   the workspace config file (default, spec D22), a store-backed grants
   table (optional, for runtime administration), or external IAM
@@ -58,6 +61,13 @@ them divergent.
   under the default file-first workspace config (spec D22), or as rows in
   the optional store-backed registry (`bizkit_table_configs` /
   `bizkit_rule_sets`).
+- **Identity / `AuthProvider`** (spec D42): authentication ("who is
+  this?") is a separate port from `AccessPolicy` ("what can they do?").
+  Every `AuthProvider` adapter (`none`, `oidc`, `ldap`, `token` —
+  `saml` deferred) produces the same `Identity` (principal, display
+  name, email, groups), which feeds the existing `GroupMappingAccessPolicy`
+  unchanged. Config-selected via `auth.provider`, same pattern as
+  `access.provider` and backend selection.
 
 State machine (rework loop per spec D20 — items editable only in DRAFT;
 each submit increments the changeset `revision`; approvals bind to the
@@ -84,8 +94,8 @@ DRAFTs never expire.
 - **Language:** Python 3.13+, uv-managed, src layout, `py.typed`.
 - **Pattern:** Domain driven design, Test driven development.
 - **Layering** (dependencies point left only):
-  `domain` ← `store` / `workspace` / `backends` / `access` ← `services` ←
-  `api` / `cli`
+  `domain` ← `store` / `workspace` / `backends` / `access` / `auth` ←
+  `services` ← `api` / `cli`
   - `domain/`: pure model (stdlib + pydantic only, no I/O). Ports (Protocols)
     live in `domain/ports.py`.
   - `store/`: SQLAlchemy persistence of workflow state, implements the
@@ -100,6 +110,14 @@ DRAFTs never expire.
     `TargetBackend`.
   - `access/`: external IAM adapters for the `AccessPolicy` port
     (group-mapping first; remote decision engines later).
+  - `auth/`: pluggable `AuthProvider` adapters (spec D42) — `none`
+    (trusted dev header, gated behind `allow_insecure_dev_mode`), `oidc`
+    (generic OIDC/OAuth2 — PingOne, Okta, Azure AD, etc., one adapter
+    via config only), `ldap` (directory bind, credentials discarded
+    after verification), `token` (static bearer token, machine-only);
+    `saml` deferred. Produces `Identity`, consumed by `access/groups.py`'s
+    `GroupMappingAccessPolicy` — authentication and authorization stay
+    separate ports.
   - `services/`: application layer. `WorkflowService` is the only place state
     transitions happen.
   - `api/` and `cli/`: thin delivery layers over services.
@@ -160,7 +178,13 @@ Drivers are optional and lazy-imported; a missing driver raises
   from outside (CLI flag, API auth middleware); bizkit decides entitlements
   only. Role/group claims used for enforcement come from the verified
   server-side channel — never from client-supplied data; frontend-known
-  roles are UX affordances only (spec D25).
+  roles are UX affordances only (spec D25). Every `AuthProvider` mode
+  (spec D42) either delegates verification externally (`oidc`, `ldap`)
+  or involves no human credential at all (`token`) — a bizkit-owned
+  username/password store is explicitly rejected. The trusted-header
+  `none` mode must be **structurally impossible to reach in production**:
+  `create_app()` refuses to start with `auth.provider: none` unless
+  `auth.allow_insecure_dev_mode: true` is also set.
 - **Validation runs at submit AND again immediately before apply** — target
   state may drift between approval and apply.
 - **Validation rules are declarative data** (serializable pydantic models),

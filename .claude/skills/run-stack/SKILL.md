@@ -15,7 +15,10 @@ uv sync
 # and grants for maker "alice" / checker "bob" — file-first per spec D22),
 # creates the SQLite workflow store, a sample SQLite *target* DB with a
 # demo config table, and one pending changeset, so authorization and
-# validation are exercised out of the box.
+# validation are exercised out of the box. The seeded config sets
+# auth.provider: none with auth.allow_insecure_dev_mode: true (spec D42) —
+# required or create_app()/CLI refuse to start; never set that flag
+# outside a local/dev workspace file.
 uv run bizkit init-store --seed-sample
 uv run bizkit --config bizkit.yaml list   # sanity check
 ```

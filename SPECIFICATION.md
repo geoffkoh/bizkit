@@ -68,6 +68,8 @@ Numbered, ADR-style. A decision stands until superseded by a later entry.
 | D39 | **Table content browsing and grid-based drafting.** The UI's primary surface is the table browser: clicking a table shows its current rows (via new `GET /api/v1/tables/{backend}/{schema}/{table}/rows`, backed by `TargetBackend.read_rows` — read-only per D13 — plus `introspect_table` for columns). Users with `submit` rights raise changesets **directly from the grid**: cell/row edits become `update` items, added rows `insert`, row deletions `delete`, all accumulating into a **draft basket** — one pending draft reviewed as a diff and saved/submitted as a single changeset (respecting the D37 cap). To make this real in dev/demo (and to be the first test vehicle for the backend contract), a **`sqlite` demo backend** joins the registry as a dev-only 8th backend (read path first; not an enterprise target, excluded from the D3 extras story — stdlib driver). | "Change this table" starts from seeing the table; grid-to-basket matches how config edits actually happen (a batch of related row changes = one reviewable changeset), and one-changeset-per-cell would spam checkers. |
 | D40 | **UI specification is a governed document**: `UI_SPECIFICATION.md` at the repo root is the source of truth for information architecture, design tokens, screens, and role-based visibility — owned by the `ux-designer` agent and synced under the §14 protocol exactly like this file. Core IA decided there: professional enterprise shell with a **left sidebar** navigating Queue + tables grouped by target (filtered to the caller's `view` grants, compose affordance only with `submit`), top bar with identity and readiness. | UI decisions were accumulating in agent bodies and chat; a fresh session must be able to rebuild the same UI, which needs the same source-of-truth treatment as the system spec. |
 | D41 | **A changeset targets exactly one table** (makes the implicit model explicit). Rationale: apply atomicity cannot honestly span targets (no 2PC across Oracle/Snowflake/Databricks — "APPLIED" would become ambiguous, corrupting D10/D31 guarantees); authorization is table-scoped (D5), and multi-table review would require every-table rights; per-table policy (TTLs D21, self-approval D27, caps D37) would need strictest-wins combination rules. Coordinated cross-table changes are addressed later by a **bundle/release** layer (roadmap §15): multiple single-table changesets linked by a bundle id, presented together for review, each approved by its own table's checkers and applied with its own target's semantics — coordination without pretending cross-database atomicity exists. | Keeps APPLIED meaning exactly what it says, keeps the checker pool and policy resolution per-table crisp, and routes the real need (review related changes together) to an honest mechanism. |
+| D42 | **Pluggable `AuthProvider` port for authentication** (concretizes D6; supplies the "trusted upstream" D25 assumed). A new domain port, `AuthProvider` (`domain/ports.py`), sits alongside `AccessPolicy` — authentication (who someone is) stays a separate port from authorization (what they can do); every adapter below only ever produces an `Identity` (`principal`, `display_name`, `email: str \| None`, `groups: list[str]`), which then flows into the **existing, unchanged** `GroupMappingAccessPolicy` (D5/D25). Selection is config-driven — `auth.provider: "none" \| "oidc" \| "ldap" \| "token"` — same pattern as `access.provider` and backend selection. Adapters: **`none`** — today's trusted-header dev behavior, but now **structurally gated**: `create_app()` refuses to start with `provider: none` unless `auth.allow_insecure_dev_mode: true` is also set, so it can never be an accidental production config. **`oidc`** — generic OIDC/OAuth2 (Authorization Code + PKCE), one adapter covering any compliant IdP (PingOne, PingFederate, Okta, Azure AD, Auth0, Keycloak) via config alone (issuer, client id/secret via D30 secret indirection, redirect URI, scopes, group-claim name) — never vendor-specific code; backend-mediated (the API handles redirect/callback/token exchange and holds the session, the SPA never touches a token), making D25's "claims from the verified server-side channel" structural rather than conventional. **`ldap`** — an LDAP/AD bind: submitted credentials verify against a directory and are discarded immediately, never persisted — the actual answer to "basic auth" without bizkit ever owning a password, still consistent with D6. **`token`** — a static bearer token for CI/service accounts, matched against a configured `{token_hash: principal}` set (hash stored, never plaintext); machine-only, no session, no human login path. `saml` is deliberately **not** a v1 adapter (flagged in the port shape so it can slot in later) — build only on concrete demand, since it's a heavier surface than OIDC for the same outcome. Session-storage mechanism (stateless signed cookie vs. a server-side session table in the workflow store) and a first-class `bizkit login` CLI subcommand are open implementation questions, not decided here. | Applies the ports-and-adapters pattern already used for `TargetBackend` and `AccessPolicy` to authentication instead of inventing a new mechanism, and gives real deployments (PingOne SSO now, others later) an actual verification path instead of the fully-trusted header the scaffold ships with today — while keeping every mode consistent with D6 (OIDC/LDAP delegate verification externally; `token` never involves a human credential at all). Rejected: a bizkit-owned username/password store (directly violates D6, and is an open-ended security-maintenance burden for a config-governance tool); simultaneous multi-provider login (no real need yet — revisit only if a genuine multi-IdP/multi-tenant case appears); MFA implemented inside bizkit (always delegated to the IdP, or flagged as a gap of `ldap` mode). |
+| D43 | **Reader is the single view-only/transparency persona; `view` deliberately spans data *and* audit (clarifies D38).** The `view` action grants both browsing current table content AND seeing the governance history around that table — its changesets, review decisions, and audit trail. There is intentionally **no separate `auditor` role and no separate `view_audit`/`audit` action**: an auditor is provisioned as a `reader` on the relevant scope, and every `view`-gated surface (rows, changesets tab, changeset detail, and audit trail) rides on that one action. Considered and rejected: splitting `view` into `view` (data) + `view_audit` (governance history) with an `auditor = {view_audit}` bundle to support a compliance auditor who verifies process integrity (four-eyes honored, self-approvals flagged, deadlines met) *without* seeing the underlying config values — rejected because, for the target deployments, the auditor and the data-reader are the same look-but-don't-touch persona, and splitting `view` would ripple through every view-gated endpoint, the sidebar table-tree visibility, and audit-scope filtering for no current benefit. **Revisit condition**: a real deployment must grant process-audit visibility while denying the (sensitive) config data values — at which point split the **action** (granularity lives in the `Action` enum, not the `Role` set, per D5), keeping `reader = {view, view_audit}` and adding `auditor = {view_audit}`; the role stays a thin bundle over the new action. | Roles are thin bundles of actions (D5) and `is_allowed` checks actions, not roles — an `auditor` role with no distinct underlying action would be cosmetic. Premature granularity is cost without benefit; recording the rejection and its revisit condition keeps a future session from re-deriving the same analysis. |
 
 ## 3. Domain Model
 
@@ -157,15 +159,23 @@ action. `bizkit expire` sweeps proactively. DRAFTs never expire.
 ### 3.2 Access control — `domain/access.py` (to be created)
 
 - `Role`: `maker`, `checker`, `reader`, `admin`. Readers hold `view`
-  only (D38). Admin manages grants; admin never bypasses four-eyes (D8).
+  only (D38) — `reader` is the single view-only/transparency persona and
+  is also the **auditor** persona; there is deliberately no separate
+  `auditor` role (D43). Admin manages grants; admin never bypasses
+  four-eyes (D8).
 - `Action`: `submit`, `approve`, `reject`, `apply`, `comment`, `view`.
+  `view` deliberately spans both current table data AND the governance
+  history around the table (its changesets, review decisions, and audit
+  trail) — one action, not split into data-view and audit-view (D43;
+  revisit condition recorded there).
 - `Scope`: `(backend, schema, table)` pattern; each segment is an exact
   string or `*` (matches any). Example: `snowflake/*/fx_rates`,
   `oracle/finance/*`.
 - `Grant`: `(principal, role, scope)`.
 - Default role→action mapping: `maker` → submit, comment, view;
   `checker` → approve, reject, apply, comment, view; `reader` → view
-  (D38); `admin` → grant management + view.
+  (D38; covers data + audit transparency, D43); `admin` → grant
+  management + view.
 
 Port (in `domain/ports.py`):
 
@@ -210,7 +220,7 @@ frontend-known roles are for UX affordances only.
 | withdraw | — | maker only (identity rule, not a grant) |
 | comment | `comment` on the table | — |
 | import | `submit` on the table | DRAFT changesets only; all-or-nothing with `ImportReport`; capped by `max_changeset_items`; audited with file hash (D36) |
-| view | `view` on the table | — |
+| view | `view` on the table | one action covers table data *and* the table's changesets, decisions, and audit trail — auditors are readers (D43) |
 
 ### 3.4 Approval — `domain/approval.py`
 
@@ -274,7 +284,10 @@ Adapters (D22): `FileTableRegistry` (workspace config file, default) and
 with their modules: `AccessDeniedError` with `domain/access.py`,
 `ConfigError` with `workspace/loader.py` (D23), `ConcurrencyError` with
 the store's optimistic locking (D31), `ChangesetLimitError` with the
-size cap (D37).)
+size cap (D37), `AuthenticationError` with `domain/identity.py` (D42 —
+raised by an `AuthProvider` adapter when credentials/tokens/sessions
+fail to verify; distinct from `AccessDeniedError`, which is an
+authorization decision on an already-verified identity).)
 
 ### 3.10 Entity-relationship view (workflow store)
 
@@ -387,6 +400,61 @@ Notes:
 - Users are not an entity (D6): principals are external identities;
   `maker`, `checker`, `author`, `actor`, `principal` are identity strings.
 
+### 3.11 Authentication — `domain/identity.py` (to be created, D42)
+
+Separate from §3.2 Access control by design: this port answers "who is
+this?"; `AccessPolicy` still answers "what can they do?". Nothing in
+this section changes `AccessPolicy` or its adapters.
+
+- `Identity`: `principal`, `display_name`, `email: str | None`,
+  `groups: list[str]`. This is the *only* thing every `AuthProvider`
+  adapter produces, and the *only* thing `GroupMappingAccessPolicy`
+  (§3.2) consumes from it — the two ports connect through this one
+  value object and nothing richer.
+
+Port (in `domain/ports.py`):
+
+```python
+class AuthProvider(Protocol):
+    def login_url(self, state: str, redirect_to: str) -> str | None: ...
+    def handle_callback(self, request: CallbackRequest) -> Identity: ...
+    def authenticate(self, credentials: Credentials) -> Identity: ...
+```
+
+Adapters (`auth/`, D42), selected via `BizkitConfig.auth.provider`:
+- **`none`** (`auth/none.py`) — trusted `X-Bizkit-User`/`X-Bizkit-Groups`
+  headers, unchanged from today's scaffold behavior. Only reachable when
+  `auth.allow_insecure_dev_mode: true` is also set; `create_app()` raises
+  `ConfigError` at startup otherwise. Dev/demo only, never production.
+- **`oidc`** (`auth/oidc.py`) — generic OIDC/OAuth2, Authorization Code +
+  PKCE, backend-mediated (API-held session, never an SPA-held token).
+  One adapter for any compliant IdP (PingOne, PingFederate, Okta, Azure
+  AD, Auth0, Keycloak) — differences are config values, never code.
+- **`ldap`** (`auth/ldap.py`) — binds submitted credentials against a
+  directory; the bind is the entire verification; credentials are
+  discarded immediately after, never persisted. Group memberships come
+  from a subsequent LDAP search, mapped the same way OIDC group claims
+  are.
+- **`token`** (`auth/token.py`) — static bearer token matched against a
+  configured `{token_hash: principal}` set (config stores the hash,
+  never the plaintext). Machine-only: CI/service accounts, no session,
+  no human login surface.
+- **`saml`** — deliberately not built for v1; the port shape
+  accommodates it later. Build only when a concrete deployment needs a
+  SAML-only IdP (roadmap §15 candidate, not yet a decision).
+
+Every adapter's `Identity.groups` feeds the existing
+`GroupMappingAccessPolicy` unchanged (§3.2) — D42 only adds the
+authentication side of the system; the authorization side (grants,
+scopes, roles) is untouched.
+
+Open questions, not yet decided (tracked in §15 until resolved):
+session-storage mechanism (stateless signed cookie vs. a server-side
+session table in the workflow store — the latter gives real immediate
+revocation, consistent with bizkit already owning a DB for workflow
+state); whether a first-class `bizkit login` CLI subcommand is worth
+adding versus per-mode flags/env vars.
+
 ## 4. Module Layout
 
 ```
@@ -394,7 +462,7 @@ src/bizkit/
 ├── __init__.py, __main__.py, py.typed
 ├── exceptions.py, config.py
 ├── domain/          # pure model: changeset, approval, comment, audit,
-│   │                #   validation, table, access, ports
+│   │                #   validation, table, access, identity, ports
 ├── store/           # sync SQLAlchemy persistence of workflow state:
 │   │                #   engine.py, models.py, repositories.py; optional
 │   │                #   store-backed config adapters (access.py, registry.py)
@@ -404,6 +472,8 @@ src/bizkit/
 ├── backends/        # base.py, registry.py, typemap.py,
 │   │                #   oracle|mssql|mysql|postgres|snowflake|databricks.py
 ├── access/          # external IAM adapters (groups.py, later opa.py …)
+├── auth/            # pluggable AuthProvider adapters (D42): none.py,
+│   │                #   oidc.py, ldap.py, token.py (saml.py future)
 ├── services/        # workflow.py, validation.py, importer.py, comments.py
 ├── api/             # app.py (create_app factory), schemas.py (DTOs),
 │   │                #   routes/ (health, changesets, comments, validation,
@@ -475,9 +545,14 @@ bidirectional, covered by tests for all seven backends.
 FastAPI app from `create_app(config)` factory; sync (`def`) routes so the
 sync store runs in the threadpool (D2). Business endpoints are versioned
 under `/api/v1` (D33); health/readiness are unversioned (D32). Identity
-comes from pluggable auth middleware (D6); dev default: trusted headers
-(`X-Bizkit-User`, `X-Bizkit-Groups`). Structured JSON logging with
-correlation fields and a pluggable metrics hook per D32.
+resolution goes through the configured `AuthProvider` (D42): a request
+dependency validates whatever session/token the active adapter uses and
+produces the request's `Identity`, replacing the old blanket-trusted
+`_identity()`. The `none` adapter keeps today's trusted-header behavior
+(`X-Bizkit-User`, `X-Bizkit-Groups`) but only when
+`auth.allow_insecure_dev_mode: true` — `create_app()` refuses to start
+otherwise. Structured JSON logging with correlation fields and a
+pluggable metrics hook per D32.
 
 Endpoints (scaffold → target): `GET /api/health` (liveness),
 `GET /api/ready` (store reachable + config loaded);
@@ -489,7 +564,14 @@ Endpoints (scaffold → target): `GET /api/health` (liveness),
 `GET /api/v1/tables`;
 `GET /api/v1/tables/{backend}/{schema}/{table}/rows` and `…/columns`
 (read-only target browsing for the table browser, D39; requires `view`);
-grants admin: `GET/POST/DELETE /api/v1/grants` (only with the
+`GET /api/v1/me` (current `Identity`, driving the SPA's display-only
+topbar under any non-`none` provider); auth routes (D42, present only
+for modes that need them): `GET /api/v1/auth/login` (redirect to the
+IdP; `oidc` only), `GET /api/v1/auth/callback` (`oidc` token exchange +
+session creation), `POST /api/v1/auth/login` (`ldap` — accepts
+`{username, password}`, performs the bind, creates a session),
+`POST /api/v1/auth/logout` (any session-based mode); grants admin:
+`GET/POST/DELETE /api/v1/grants` (only with the
 store-backed access adapter, D22). DTOs in `api/schemas.py` are separate from domain
 models. SPA served from `api/static/` when present.
 `bizkit serve` may run an optional periodic expiry sweep (D21); guard-on-
@@ -499,7 +581,12 @@ requirement.
 ## 8. CLI
 
 `bizkit` (click group; `--store-url`, env `BIZKIT_STORE_URL`; identity via
-`--user`, env `BIZKIT_USER`): `init-store [--seed-sample]`, `list`,
+`--user`, env `BIZKIT_USER` — **only meaningful under `auth.provider:
+none`**, gated the same way as the API's trusted-header mode, D42).
+Other providers get their own CLI path: `bizkit login` performs the
+`oidc` device-code grant or prompts once for `ldap` credentials (bound,
+then discarded) and caches a short-lived local session; `token` mode
+reads a bearer token from `--token`/`BIZKIT_TOKEN`. `init-store [--seed-sample]`, `list`,
 `show`, `submit`, `review` (approve/reject), `apply`, `validate`,
 `comment`, `expire` (sweep overdue changesets; cron-able, D21),
 `import <file> --table <t> [--mode append|diff] [--changeset ID]`
@@ -519,6 +606,13 @@ checker) so authorization is exercised out of the box.
 
 `BizkitConfig` (pydantic, injected — no globals): `store_url`,
 `targets: dict[str, TargetConfig]` (`backend`, `url`),
+`auth: AuthConfig` (D42 — `provider: "none" | "oidc" | "ldap" | "token"`,
+default `"none"`; `allow_insecure_dev_mode: bool = False`, required
+alongside `provider: none` or `bizkit config validate`/`create_app()`
+fail; provider-specific sub-config as a discriminated union:
+`oidc: {issuer, client_id, client_secret, redirect_uri, scopes,
+group_claim}`, `ldap: {server_uri, base_dn, user_dn_template,
+group_search_base}`, `token: {tokens: [{principal, token_hash}]}`),
 `access: AccessConfig` (`provider: "file" | "store" | "groups"`,
 `group_mappings`), `workflow: WorkflowConfig`
 (`default_review_ttl: timedelta | None`,
@@ -545,6 +639,13 @@ version: 1                  # required; workspace schema version (D23)
 store_url: ${BIZKIT_STORE_URL}          # secret indirection (D30) —
 targets:                                #   literal passwords fail validate
   fx_prod: { backend: snowflake, url: "${FX_PROD_URL}" }
+auth:
+  provider: none             # none | oidc | ldap | token (D42)
+  allow_insecure_dev_mode: true   # required for provider: none to start
+  # oidc: { issuer: "https://auth.pingone.com/<env-id>/as",
+  #         client_id: bizkit, client_secret: "${BIZKIT_OIDC_SECRET}",
+  #         redirect_uri: "https://bizkit.internal/api/v1/auth/callback",
+  #         scopes: [openid, profile, email, groups], group_claim: groups }
 access:
   provider: file            # file | store | groups
 workflow:
@@ -580,6 +681,17 @@ grants — no role switcher, no active-role state. Capacity is explained
 in context ("you are the maker — another checker must review") and the
 changeset queue offers to-review / mine filters.
 
+Identity display (D42): the topbar's identity control renders the dev
+`UserPicker` only when `GET /api/v1/me` reports `auth.provider: none`;
+every other provider renders a "Sign in" redirect (`oidc`) or a login
+form (`ldap`) instead, and once authenticated the topbar is
+**display-only**, sourced from `/api/v1/me` — no client-editable
+identity outside dev mode. This makes UI_SPECIFICATION.md §3's existing
+"production: display-only, from auth" line real rather than aspirational.
+The SPA never holds a token under `oidc`/`ldap` (session cookie, D42) —
+`api.ts` drops the `X-Bizkit-User` header entirely once a real provider
+is configured.
+
 The full information architecture, design tokens, screens (sidebar
 shell, table browser with draft basket, queue, detail/review), and
 role-based visibility matrix live in **`UI_SPECIFICATION.md`** (D40),
@@ -606,6 +718,15 @@ validation report display.
 - Size-cap coverage (D37): cap enforced on manual add, import, and diff
   generation; re-checked at submit; per-table override wins over global;
   `ChangesetLimitError` raised, nothing partially added.
+- Auth coverage (D42): fast suite uses fake/mock `AuthProvider` adapters
+  — no real IdP or directory needed; `none` refuses to start without
+  `allow_insecure_dev_mode` (`ConfigError`); an `Identity`'s `groups`
+  correctly drives `GroupMappingAccessPolicy` end-to-end via a fake
+  identity; `oidc`/`ldap` adapters get contract tests against
+  stubbed/recorded provider responses (JWKS fixtures, a fake LDAP
+  bind), with any real-IdP integration test gated behind its own marker
+  and auto-skipped without live credentials, same posture as the DB
+  backend matrix.
 - Integration: markers `integration`, `db_postgres`, `db_mysql`,
   `db_mssql`, `db_oracle`, `db_snowflake`, `db_databricks`, `slow`
   (registered in pyproject). Containers where possible (Percona image for
@@ -621,6 +742,13 @@ Core: `click>=8.1`, `pydantic>=2.0`, `sqlalchemy>=2.0`, `fastapi>=0.115`,
 Extras per §5. Dev: `pytest`, `pytest-asyncio`,
 `httpx`, `ruff`, `mypy` (+ `pytest-cov` in the `dev` extra). Adding any
 new library requires asking the user first.
+
+Proposed for D42 (**not yet approved/added**): an OIDC client library
+(e.g. `authlib` — async-friendly, handles Authorization Code + PKCE +
+JWKS validation) for the `oidc` `AuthProvider` adapter, and an LDAP
+client (e.g. `ldap3`) for the `ldap` adapter. Both `none` and `token`
+adapters need no new dependency (stdlib `hmac`/`secrets` suffice for
+token hashing).
 
 ## 13. Implementation Status
 
@@ -732,11 +860,24 @@ new library requires asking the user first.
   (introspect/read/dry-run/apply);
   rule evaluation + validation wiring into submit/pre-apply (D12);
   apply orchestration; store-backed config
-  adapters (D22); real auth middleware replacing the dev header
-  (groups→policy wiring); structured logging/metrics (D32); Alembic
+  adapters (D22); structured logging/metrics (D32); Alembic
   (D34); `audit export/purge` (D35); CLI workflow commands
   (show/submit/review/comment currently stubs — the API/UI cover these
   flows).
+- ⬜ **D42 Authentication — spec only, no code yet.** Today's
+  `_identity()` (`api/app.py`) still trusts `X-Bizkit-User` unconditionally
+  and `GroupMappingAccessPolicy` (`access/groups.py`) is still unwired —
+  this is the divergence D42 exists to close. Pending: `domain/identity.py`
+  (`Identity`, `AuthenticationError`) + `AuthProvider` port in
+  `domain/ports.py`; `auth/` adapters (`none`, `oidc`, `ldap`, `token`;
+  `saml` deferred); `AuthConfig` in `config.py` + workspace schema
+  (`bizkit config validate` gate on `none` + `allow_insecure_dev_mode`);
+  replacing `_identity()` with the configured-provider dependency;
+  `/api/v1/auth/*` routes and wiring `create_app()` to branch on
+  `config.access.provider` into `GroupMappingAccessPolicy` (the adapter
+  itself needs no changes); `bizkit login` / `--token` CLI paths;
+  frontend login screen + display-only topbar identity; the `authlib`/
+  `ldap3` dependency approvals (§12).
 
 ## 14. Maintenance Protocol
 
@@ -768,6 +909,15 @@ a D-entry when designed:
   No cross-database atomicity is promised, ever.
 - **Remote-decision access adapter** (OPA/Keycloak-style) on the existing
   `AccessPolicy` port (D5).
+- **SAML `AuthProvider` adapter** on the D42 port — only if a concrete
+  deployment needs a SAML-only IdP; heavier surface than `oidc` for the
+  same outcome.
+- **Session-storage decision** for D42's `oidc`/`ldap` adapters:
+  stateless signed cookie vs. a server-side session table in the
+  workflow store (real immediate revocation vs. simplicity) — not yet
+  decided.
+- **`bizkit login` as a first-class CLI subcommand** vs. per-mode
+  flags/env vars, for D42's `oidc` device-code and `ldap` bind flows.
 - **Prometheus metrics adapter** on the D32 metrics hook (optional extra).
 - **Secret-manager URI resolution** on the D30 indirection hook.
 - **Excel import** (openpyxl) as an input format extension of D36 (CSV
