@@ -38,6 +38,11 @@ Design decisions are referenced by their `SPECIFICATION.md` D-numbers.
   did not match. The basket now carries its table, switching prompts
   keep-draft/discard (UI_SPECIFICATION.md §4.1), and sort/search/paging/edit
   state resets per table.
+- `--config` pointing at a nonexistent file is now a clear error instead of
+  being silently ignored. The old fallback ran with no grants and no targets,
+  so the mistake surfaced much later as a confusing `AccessDenied` or "no
+  target profile". `init-store` is exempt, since `--seed-sample` creates the
+  file at that path.
 - Seeded demo data is now self-consistent with apply: rows a pending
   changeset inserts are absent from the target (inserting an existing key
   tripped the primary key), and the REJECTED example is a valid change

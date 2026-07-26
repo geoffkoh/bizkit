@@ -649,7 +649,12 @@ blocking issues),
 effective self-approval posture per D27) and
 `config schema` (emit the workspace JSON Schema) (D23),
 `serve [--host --port --reload]`. Global options also include
-`--config` (workspace config file path, env `BIZKIT_CONFIG`).
+`--config` (workspace config file path, env `BIZKIT_CONFIG`). A `--config`
+naming a file that does not exist is a **hard error**, not a silent fallback
+— without the workspace there are no grants and no targets, so the real
+symptom would otherwise surface much later as a baffling `AccessDenied` or
+"no target profile". The sole exemption is `init-store`, whose
+`--seed-sample` writes the workspace file at that path.
 `--seed-sample` creates a demo SQLite target (`sample_target.db`), a demo
 config table, one pending changeset, and sample grants (a maker and a
 checker) so authorization is exercised out of the box. The seed is

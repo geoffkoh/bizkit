@@ -89,11 +89,23 @@ def cli(
 ) -> None:
     """bizkit — maker-checker workflows for configuration tables."""
     workspace: LoadedWorkspace | None = None
-    if config_path is not None and Path(config_path).exists():
-        try:
-            workspace = load_workspace(config_path)
-        except BizkitError as exc:
-            raise click.ClickException(str(exc)) from exc
+    if config_path is not None:
+        exists = Path(config_path).exists()
+        # Never silently fall back: without the workspace there are no grants
+        # and no targets, so the real symptom surfaces much later as a baffling
+        # AccessDenied or "no target profile". `init-store` is the one
+        # exemption — `--seed-sample` *writes* the file at this path.
+        if not exists and ctx.invoked_subcommand != "init-store":
+            raise click.ClickException(
+                f"Workspace config {config_path!r} does not exist. Pass a path "
+                "to an existing YAML/JSON workspace file, or omit --config to "
+                "run without one (no grants, no targets)."
+            )
+        if exists:
+            try:
+                workspace = load_workspace(config_path)
+            except BizkitError as exc:
+                raise click.ClickException(str(exc)) from exc
     config = workspace.config if workspace else load_config(store_url)
     ctx.obj = CLIContext(
         config=config, workspace=workspace, config_path=config_path, user=user
