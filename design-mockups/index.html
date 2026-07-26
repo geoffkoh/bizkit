@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>bizkit — Design mockups</title>
+<link rel="stylesheet" href="mockup.css" />
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4" y1="12" x2="2" y2="12"/><line x1="22" y1="12" x2="20" y2="12"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/></symbol>
+</svg>
+<div class="mockup-banner">
+  <span>Static design mockups for the ux-designer / frontend-engineer token system — not part of frontend/'s real build.</span>
+  <button class="theme-toggle" data-theme-toggle><svg class="icon icon-sm"><use href="#i-moon"/></svg> Dark mode</button>
+</div>
+<main style="max-width:640px;margin:var(--space-8) auto;padding:0 var(--space-6)">
+  <h1 class="page-title">Design mockups</h1>
+  <p class="meta" style="margin-bottom:var(--space-6)">Five static pages, one shared stylesheet (<code>mockup.css</code>) implementing UI_SPECIFICATION.md §2–§4: tokens, tree navigation, icons, and grid sort/resize/overflow handling. Open any page directly in a browser; the theme toggle in the banner overrides your OS setting for side-by-side comparison.</p>
+  <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+    <a class="panel" href="tokens.html" style="text-decoration:none;color:var(--fg)"><b>Tokens</b><div class="meta">Type/spacing/elevation/motion/interaction-state scales in isolation.</div></a>
+    <a class="panel" href="queue.html" style="text-decoration:none;color:var(--fg)"><b>Queue</b><div class="meta">§4.2 — filters, DataTable, loading/empty/error states.</div></a>
+    <a class="panel" href="table-browser.html" style="text-decoration:none;color:var(--fg)"><b>Table browser</b><div class="meta">§4.1 — grid, rule dot, hover row actions, draft basket, review slide-over.</div></a>
+    <a class="panel" href="changeset-detail.html" style="text-decoration:none;color:var(--fg)"><b>Changeset detail</b><div class="meta">§4.3 — diff items, actions panel, self-approved badge, comments, audit trail.</div></a>
+  </div>
+</main>
+<script src="mockup.js"></script>
+</body>
+</html>

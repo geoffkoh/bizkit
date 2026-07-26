@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>bizkit — Table browser: fx_rates (mockup)</title>
+<link rel="stylesheet" href="mockup.css" />
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><polyline points="15 6 9 12 15 18"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-more-vertical" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4"/><path d="M16 15l-4 4-4-4"/></symbol>
+  <symbol id="i-spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 0-9-9"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4" y1="12" x2="2" y2="12"/><line x1="22" y1="12" x2="20" y2="12"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+</svg>
+
+<div class="mockup-banner">
+  <span>Design mockup — Table browser, grid-to-basket drafting (D39 / UI_SPECIFICATION.md §4.1). Try: hover a row, click the "Rate" header (server-sort spinner demo), hover "Notes" (truncate+tooltip), open the row menu, click "Review &amp; submit".</span>
+  <button class="theme-toggle" data-theme-toggle><svg class="icon icon-sm"><use href="#i-moon"/></svg> Dark mode</button>
+</div>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">bizkit</div>
+    <div class="topbar-right">
+      <button class="btn cmdk-trigger" data-open-cmdk><svg class="icon icon-sm"><use href="#i-search"/></svg> Search… <kbd>⌘K</kbd></button>
+      <button class="acting-as">acting as <b>bob</b> (maker) <svg class="icon icon-sm icon-muted"><use href="#i-chevron-down"/></svg></button>
+      <span><span class="ready-dot"></span> ready</span>
+    </div>
+  </div>
+
+  <div class="body-row">
+    <nav class="sidebar">
+      <div class="sidebar-resize-handle" data-sidebar-resize title="Drag to resize"></div>
+      <button class="side-toggle" data-sidebar-toggle title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg class="icon icon-side"><use href="#i-sidebar"/></svg>
+      </button>
+      <div class="side-group">Workbench</div>
+      <a class="side-link"><span class="text">Queue</span><span class="count">3</span></a>
+
+      <div class="side-group">Tables</div>
+      <div class="side-tree">
+        <details open>
+          <summary>
+            <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+            <svg class="icon icon-sm icon-side"><use href="#i-server"/></svg>
+            <span class="text cell-truncate" data-tip="postgres-prod">postgres-prod</span>
+          </summary>
+          <div class="side-tree-nested">
+            <details open>
+              <summary>
+                <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+                <svg class="icon icon-sm icon-side"><use href="#i-folder"/></svg>
+                <span class="text cell-truncate" data-tip="sample">sample</span>
+              </summary>
+              <div class="side-tree-nested">
+                <a class="side-link leaf active"><span class="text cell-truncate" data-tip="fx_rates">fx_rates</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="limits">limits</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="counterparty_risk_limits_by_desk_and_region">counterparty_risk_limits_by_desk_and_region</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="audit_log">audit_log</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+              </div>
+            </details>
+            <details>
+              <summary>
+                <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+                <svg class="icon icon-sm icon-side"><use href="#i-folder"/></svg>
+                <span class="text cell-truncate" data-tip="risk">risk</span>
+              </summary>
+              <div class="side-tree-nested">
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="var_limits">var_limits</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+              </div>
+            </details>
+          </div>
+        </details>
+        <details>
+          <summary>
+            <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+            <svg class="icon icon-sm icon-side"><use href="#i-server"/></svg>
+            <span class="text cell-truncate" data-tip="snowflake-eu">snowflake-eu</span>
+          </summary>
+          <div class="side-tree-nested">
+            <a class="side-link leaf"><span class="text cell-truncate" data-tip="instruments">instruments</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+          </div>
+        </details>
+      </div>
+
+      <div class="side-group">Admin</div>
+      <a class="side-link"><span class="text">Grants</span></a>
+    </nav>
+
+    <main class="work-area" style="padding-bottom:88px">
+      <div class="breadcrumb">postgres-prod / sample / <b>fx_rates</b></div>
+      <h1 class="page-title">fx_rates</h1>
+      <div class="chips">
+        <span class="chip">4 rules</span>
+        <span class="chip">review 24h · apply 4h</span>
+        <span class="chip chip-warning">SELF-APPROVAL LIVE</span>
+        <span class="chip">your capacity: maker</span>
+      </div>
+
+      <div class="tabs" data-tabs="table">
+        <div class="tab active" data-tab="rows">Rows</div>
+        <div class="tab" data-tab="changesets">Changesets</div>
+        <div class="tab" data-tab="rules">Rules &amp; policy</div>
+      </div>
+
+      <div data-tab-panel-group="table" data-tab-panel="rows" class="tab-panel active">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <div style="position:relative">
+              <svg class="icon icon-muted" style="position:absolute;left:9px;top:50%;transform:translateY(-50%)"><use href="#i-search"/></svg>
+              <input type="search" placeholder="Search rows…" style="min-width:220px;padding-left:32px" />
+            </div>
+            <button class="btn"><svg class="icon icon-sm"><use href="#i-plus"/></svg> Add row</button>
+          </div>
+          <div class="pagination">
+            <button class="icon-btn" style="opacity:1" title="Previous page"><svg class="icon icon-sm"><use href="#i-chevron-left"/></svg></button>
+            <input type="text" value="1" class="tabular" /> / 6
+            <button class="icon-btn" style="opacity:1" title="Next page"><svg class="icon icon-sm"><use href="#i-chevron-right"/></svg></button>
+            <span style="margin-left:8px">312 rows</span>
+          </div>
+        </div>
+        <p class="meta" style="margin:-6px 0 var(--space-3)">Pair / Tenor / Source sort client-side (config-table scale, ≤500 rows). Rate demonstrates the server-sort affordance used past that cap — identical control, a spinner while the request is in flight.</p>
+
+        <div class="card">
+          <table class="data">
+            <thead>
+              <tr>
+                <th class="op-marker"></th>
+                <th class="sortable" data-sort-state="none"><button class="sort-trigger"><span class="th-inner">Pair <svg class="icon icon-sm sort-icon"><use href="#i-sort"/></svg></span></button></th>
+                <th class="sortable" data-sort-state="none"><button class="sort-trigger"><span class="th-inner">Tenor <svg class="icon icon-sm sort-icon"><use href="#i-sort"/></svg></span></button></th>
+                <th class="sortable" data-server="true" data-sort-state="none">
+                  <button class="sort-trigger"><span class="th-inner">Rate
+                    <span class="rule-dot" title="Rule: rate must be > 0 (constraint); rate must be numeric (type)"></span>
+                    <svg class="icon icon-sm sort-icon"><use href="#i-sort"/></svg>
+                  </span></button>
+                </th>
+                <th>Source</th>
+                <th>Notes</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row">
+                <td class="op-marker"></td>
+                <td>EUR/USD</td><td>SPOT</td><td class="tabular">1.0842</td><td>reuters</td>
+                <td class="col-notes"><span class="cell-truncate" data-tip="Primary desk quote, refreshed every 5 minutes from the Reuters composite feed.">Primary desk quote, refreshed every 5 minutes from the Reuters composite feed.</span></td>
+                <td class="tabular">2026-07-20</td>
+                <td>
+                  <button class="icon-btn" title="Edit row"><svg class="icon icon-sm"><use href="#i-pencil"/></svg></button>
+                  <div class="dropdown" style="display:inline-block">
+                    <button class="icon-btn" data-dropdown-toggle title="Row menu"><svg class="icon icon-sm"><use href="#i-more-vertical"/></svg></button>
+                    <div class="dropdown-menu">
+                      <button><svg class="icon icon-sm" style="margin-right:6px"><use href="#i-pencil"/></svg>Edit row</button>
+                      <button><svg class="icon icon-sm" style="margin-right:6px"><use href="#i-trash"/></svg>Delete row</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr class="row row-update">
+                <td class="op-marker"><span class="badge badge-warning" style="padding:1px 6px">upd</span></td>
+                <td class="changed">GBP/USD</td><td>SPOT</td><td class="tabular changed">1.2790</td><td>reuters</td>
+                <td class="col-notes"><span class="cell-truncate" data-tip="Spread widened ahead of the BoE rate decision — see changeset for rationale.">Spread widened ahead of the BoE rate decision — see changeset for rationale.</span></td>
+                <td class="tabular">2026-07-20</td>
+                <td>
+                  <button class="icon-btn" style="opacity:1" title="Edit row"><svg class="icon icon-sm"><use href="#i-pencil"/></svg></button>
+                  <button class="icon-btn" style="opacity:1" title="Undo change"><svg class="icon icon-sm"><use href="#i-undo"/></svg></button>
+                </td>
+              </tr>
+              <tr class="row row-insert">
+                <td class="op-marker"><span class="badge badge-positive" style="padding:1px 6px">new</span></td>
+                <td>USD/JPY</td><td>1M</td><td class="tabular">148.30</td><td>manual</td>
+                <td class="col-notes"><span class="cell-truncate" data-tip="Added to cover the new 1M forward book opened this week.">Added to cover the new 1M forward book opened this week.</span></td>
+                <td class="tabular">—</td>
+                <td></td>
+              </tr>
+              <tr class="row row-delete">
+                <td class="op-marker"><span class="badge badge-negative" style="padding:1px 6px">del</span></td>
+                <td>NOK/SEK</td><td>SPOT</td><td class="tabular">1.0110</td><td>reuters</td>
+                <td class="col-notes"><span class="cell-truncate" data-tip="Stale tenor bucket, no longer quoted by the desk.">Stale tenor bucket, no longer quoted by the desk.</span></td>
+                <td class="tabular">2026-06-02</td>
+                <td></td>
+              </tr>
+              <tr class="row">
+                <td class="op-marker"></td>
+                <td>AUD/USD</td><td>SPOT</td><td class="tabular">0.6634</td><td>reuters</td>
+                <td class="col-notes"><span class="cell-truncate" data-tip="Primary desk quote, refreshed every 5 minutes from the Reuters composite feed.">Primary desk quote, refreshed every 5 minutes from the Reuters composite feed.</span></td>
+                <td class="tabular">2026-07-20</td>
+                <td><button class="icon-btn" title="Edit row"><svg class="icon icon-sm"><use href="#i-pencil"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-tab-panel-group="table" data-tab-panel="changesets" class="tab-panel">
+        <div class="card">
+          <table class="data">
+            <thead><tr><th>Title</th><th>State</th><th class="tabular">Rev</th><th class="tabular">Items</th><th>Maker</th></tr></thead>
+            <tbody>
+              <tr><td>Q3 FX spread widening</td><td><span class="badge badge-pending">Submitted</span></td><td class="tabular">2</td><td class="tabular">4</td><td>bob</td></tr>
+              <tr><td>Retire legacy tenor bucket</td><td><span class="badge badge-negative">Rejected</span></td><td class="tabular">3</td><td class="tabular">2</td><td>bob</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-tab-panel-group="table" data-tab-panel="rules" class="tab-panel">
+        <div class="rule-card">
+          <span class="rule-kind constraint">constraint</span>
+          <div style="margin-top:8px"><b>rate_positive</b> — column <code>rate</code></div>
+          <p class="meta" style="margin:4px 0 0">Rate must be greater than 0.</p>
+        </div>
+        <div class="rule-card">
+          <span class="rule-kind type">type</span>
+          <div style="margin-top:8px"><b>rate_numeric</b> — column <code>rate</code></div>
+          <p class="meta" style="margin:4px 0 0">Rate must parse as a decimal with up to 6 places.</p>
+        </div>
+        <div class="rule-card">
+          <span class="rule-kind cross-field">cross-field</span>
+          <div style="margin-top:8px"><b>tenor_matches_source</b> — columns <code>tenor</code>, <code>source</code></div>
+          <p class="meta" style="margin:4px 0 0">Manual entries require tenor ≠ SPOT.</p>
+        </div>
+        <p class="meta">Rules are config-as-code (D11/D22): changed via a config-file PR, never in-app.</p>
+      </div>
+    </main>
+  </div>
+
+  <div class="basket-bar">
+    <div class="basket-summary">Draft: <b>3 changes</b> (1 update · 1 insert · 1 delete)</div>
+    <div class="basket-actions">
+      <button class="btn" data-toast-trigger data-toast-message="Draft discarded" data-toast-variant="info">Discard</button>
+      <button class="btn btn-primary" data-open-slideover>Review &amp; submit</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" data-scrim></div>
+<div class="slideover" data-slideover>
+  <div class="slideover-header">
+    <h2 class="section-title" style="margin:0">Review draft — 3 changes</h2>
+    <button class="icon-btn" style="opacity:1" data-close-slideover title="Close"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="slideover-body">
+    <div class="panel" style="margin-bottom:var(--space-4)">
+      <label class="meta" style="display:block;margin-bottom:4px">Title</label>
+      <input type="text" value="Q3 FX spread widening" style="width:100%;margin-bottom:var(--space-3)" />
+      <label class="meta" style="display:block;margin-bottom:4px">Description</label>
+      <textarea rows="2" style="width:100%">Widen GBP/USD spread, add USD/JPY 1M forward, retire stale NOK/SEK spot.</textarea>
+    </div>
+
+    <div class="diff-item">
+      <span class="badge badge-warning" style="padding:1px 8px;margin-bottom:6px;display:inline-block">update</span>
+      <div class="diff-field"><b>GBP/USD · SPOT</b> — rate: <span class="diff-old">1.2745</span> → <span class="diff-new tabular">1.2790</span></div>
+    </div>
+    <div class="diff-item">
+      <span class="badge badge-positive" style="padding:1px 8px;margin-bottom:6px;display:inline-block">insert</span>
+      <div class="diff-field"><b>USD/JPY · 1M</b> — rate <span class="diff-new tabular">148.30</span>, source manual</div>
+    </div>
+    <div class="diff-item">
+      <span class="badge badge-negative" style="padding:1px 8px;margin-bottom:6px;display:inline-block">delete</span>
+      <div class="diff-field"><b>NOK/SEK · SPOT</b> — row removed</div>
+    </div>
+
+    <p class="meta">3 / 25 items (effective max_changeset_items)</p>
+  </div>
+  <div class="slideover-footer">
+    <button class="btn" data-close-slideover data-toast-trigger data-toast-message="Draft saved" data-toast-variant="success">Save draft</button>
+    <button class="btn btn-primary" data-close-slideover data-toast-trigger data-toast-message="Changeset submitted for review" data-toast-variant="success">Save &amp; submit</button>
+  </div>
+</div>
+
+<div class="toast-stack" data-toast-stack></div>
+
+<div class="scrim z-top" data-cmdk-scrim></div>
+<div class="cmdk" data-cmdk>
+  <div class="cmdk-input-row">
+    <svg class="icon icon-muted"><use href="#i-search"/></svg>
+    <input type="text" class="cmdk-input" data-cmdk-input placeholder="Search tables, changesets, actions…" autocomplete="off" />
+    <kbd>Esc</kbd>
+  </div>
+  <div class="cmdk-results" data-cmdk-results>
+    <div class="cmdk-group">Tables</div>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>fx_rates</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>limits</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>audit_log</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>counterparty_risk_limits_by_desk_and_region</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>var_limits</span><span class="cmdk-meta">postgres-prod / risk</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>instruments</span><span class="cmdk-meta">snowflake-eu</span></button>
+    <div class="cmdk-group">Changesets</div>
+    <button class="cmdk-item" data-href="changeset-detail.html"><span class="badge badge-pending" style="padding:1px 6px">Sub</span><span>Q3 FX spread widening</span><span class="cmdk-meta">sample.fx_rates</span></button>
+    <button class="cmdk-item" data-href="changeset-detail.html"><span class="badge badge-pending" style="padding:1px 6px">Sub</span><span>Raise EUR desk limit</span><span class="cmdk-meta">sample.limits</span></button>
+    <div class="cmdk-group">Actions</div>
+    <button class="cmdk-item" data-href="queue.html"><svg class="icon icon-sm icon-muted"><use href="#i-sidebar"/></svg><span>Go to Queue</span></button>
+    <button class="cmdk-item" data-action="theme"><svg class="icon icon-sm icon-muted"><use href="#i-moon"/></svg><span>Toggle theme</span></button>
+  </div>
+  <div class="cmdk-empty" data-cmdk-empty hidden>No matches. Try a table name, changeset title, or "Queue".</div>
+</div>
+
+<script src="mockup.js"></script>
+</body>
+</html>

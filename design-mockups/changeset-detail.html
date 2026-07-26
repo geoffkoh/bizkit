@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>bizkit — Changeset detail (mockup)</title>
+<link rel="stylesheet" href="mockup.css" />
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4" y1="12" x2="2" y2="12"/><line x1="22" y1="12" x2="20" y2="12"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></symbol>
+</svg>
+
+<div class="mockup-banner">
+  <span>Design mockup — Changeset detail (UI_SPECIFICATION.md §4.3). Try tabbing through the actions panel to see the focus-ring.</span>
+  <button class="theme-toggle" data-theme-toggle><svg class="icon icon-sm"><use href="#i-moon"/></svg> Dark mode</button>
+</div>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">bizkit</div>
+    <div class="topbar-right">
+      <button class="btn cmdk-trigger" data-open-cmdk><svg class="icon icon-sm"><use href="#i-search"/></svg> Search… <kbd>⌘K</kbd></button>
+      <button class="acting-as">acting as <b>carol</b> (checker) <svg class="icon icon-sm icon-muted"><use href="#i-chevron-down"/></svg></button>
+      <span><span class="ready-dot"></span> ready</span>
+    </div>
+  </div>
+
+  <div class="body-row">
+    <nav class="sidebar">
+      <div class="sidebar-resize-handle" data-sidebar-resize title="Drag to resize"></div>
+      <button class="side-toggle" data-sidebar-toggle title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg class="icon icon-side"><use href="#i-sidebar"/></svg>
+      </button>
+      <div class="side-group">Workbench</div>
+      <a class="side-link active"><span class="text">Queue</span><span class="count">3</span></a>
+
+      <div class="side-group">Tables</div>
+      <div class="side-tree">
+        <details open>
+          <summary>
+            <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+            <svg class="icon icon-sm icon-side"><use href="#i-server"/></svg>
+            <span class="text cell-truncate" data-tip="postgres-prod">postgres-prod</span>
+          </summary>
+          <div class="side-tree-nested">
+            <details open>
+              <summary>
+                <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+                <svg class="icon icon-sm icon-side"><use href="#i-folder"/></svg>
+                <span class="text cell-truncate" data-tip="sample">sample</span>
+              </summary>
+              <div class="side-tree-nested">
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="fx_rates">fx_rates</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="limits">limits</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="counterparty_risk_limits_by_desk_and_region">counterparty_risk_limits_by_desk_and_region</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="audit_log">audit_log</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+              </div>
+            </details>
+            <details>
+              <summary>
+                <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+                <svg class="icon icon-sm icon-side"><use href="#i-folder"/></svg>
+                <span class="text cell-truncate" data-tip="risk">risk</span>
+              </summary>
+              <div class="side-tree-nested">
+                <a class="side-link leaf"><span class="text cell-truncate" data-tip="var_limits">var_limits</span><svg class="icon icon-sm icon-side affordance" title="Read-only"><use href="#i-eye"/></svg></a>
+              </div>
+            </details>
+          </div>
+        </details>
+        <details>
+          <summary>
+            <svg class="icon icon-sm icon-side chevron"><use href="#i-chevron-right"/></svg>
+            <svg class="icon icon-sm icon-side"><use href="#i-server"/></svg>
+            <span class="text cell-truncate" data-tip="snowflake-eu">snowflake-eu</span>
+          </summary>
+          <div class="side-tree-nested">
+            <a class="side-link leaf"><span class="text cell-truncate" data-tip="instruments">instruments</span><svg class="icon icon-sm icon-side affordance" title="Can submit"><use href="#i-pencil"/></svg></a>
+          </div>
+        </details>
+      </div>
+
+      <div class="side-group">Admin</div>
+      <a class="side-link"><span class="text">Grants</span></a>
+    </nav>
+
+    <main class="work-area">
+      <div class="breadcrumb">Queue / <b>Raise EUR desk limit</b></div>
+
+      <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+        <h1 class="page-title" style="margin:0">Raise EUR desk limit</h1>
+        <span class="badge badge-pending">Submitted</span>
+        <span class="meta tabular">rev 1</span>
+      </div>
+      <p class="meta" style="margin-top:6px">Bump the EUR desk intraday limit ahead of the July auction settlement.</p>
+
+      <div class="chips">
+        <span class="chip">table: <a href="table-browser.html">postgres-prod / sample / limits</a></span>
+        <span class="chip">maker: carol</span>
+        <span class="chip chip-warning">apply deadline 2026-07-19 (overdue)</span>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <h2 class="section-title" style="margin-top:0">Change items</h2>
+          <div class="diff-item">
+            <span class="badge badge-warning" style="padding:1px 8px;margin-bottom:6px;display:inline-block">update</span>
+            <div class="diff-field"><b>desk = EUR-01</b> — intraday_limit_usd: <span class="diff-old tabular">25,000,000</span> → <span class="diff-new tabular">40,000,000</span></div>
+            <div class="diff-field"><b>desk = EUR-01</b> — reviewed_by: <span class="diff-old">—</span> → <span class="diff-new">risk-desk</span></div>
+          </div>
+
+          <h2 class="section-title">Actions</h2>
+          <div class="panel">
+            <label class="meta" style="display:block;margin-bottom:6px">Review note</label>
+            <textarea rows="2" style="width:100%;margin-bottom:var(--space-3)" placeholder="Optional note visible to the maker"></textarea>
+            <div style="display:flex;gap:var(--space-2)">
+              <button class="btn btn-primary" data-toast-trigger data-toast-message="Changeset approved" data-toast-variant="success">Approve</button>
+              <button class="btn btn-danger" disabled title="Reject requires a reason">Reject</button>
+            </div>
+            <p class="meta" style="margin-top:8px">Reject is disabled until a reason is entered — blocked client-side, enforced server-side (403 either way).</p>
+          </div>
+
+          <h2 class="section-title">Decisions</h2>
+          <div class="panel" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;align-items:center;gap:var(--space-2)">
+              <span class="badge badge-negative">Rejected</span>
+              <span class="badge badge-self">Self-approved</span>
+              <span class="meta">by carol · 2026-07-15</span>
+            </div>
+            <p class="meta" style="margin:8px 0 0">"Limit increase needs risk-desk sign-off attached — resubmit with the reviewed_by field set."</p>
+          </div>
+
+          <h2 class="section-title">Comments</h2>
+          <div class="comment">
+            <div class="avatar">C</div>
+            <div class="comment-body"><b>carol</b> <span class="meta">2026-07-15</span><br />Please attach the risk-desk sign-off before resubmitting.</div>
+          </div>
+          <div class="comment comment-reply">
+            <div class="avatar">B</div>
+            <div class="comment-body"><b>bob</b> <span class="meta">2026-07-16</span><br />Added — reviewed_by is now set to risk-desk. <a href="#" style="color:var(--accent)">Reply</a></div>
+          </div>
+
+          <h2 class="section-title">Audit trail</h2>
+          <div class="card">
+            <table class="data">
+              <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Transition</th></tr></thead>
+              <tbody>
+                <tr><td class="tabular">2026-07-14 09:02</td><td>carol</td><td>submit</td><td>DRAFT → SUBMITTED</td></tr>
+                <tr><td class="tabular">2026-07-15 11:40</td><td>carol</td><td>reject</td><td>SUBMITTED → REJECTED</td></tr>
+                <tr><td class="tabular">2026-07-16 08:15</td><td>bob</td><td>rework</td><td>REJECTED → DRAFT</td></tr>
+                <tr><td class="tabular">2026-07-16 08:20</td><td>bob</td><td>submit</td><td>DRAFT → SUBMITTED</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <b style="font-size:0.9rem">At a glance</b>
+          <div style="margin-top:var(--space-3);display:flex;flex-direction:column;gap:8px" class="meta">
+            <div>State: <span class="badge badge-pending">Submitted</span></div>
+            <div>Revision: <span class="tabular">1</span> (binds to this exact snapshot)</div>
+            <div>Items: <span class="tabular">1</span> update</div>
+            <div>Review deadline: <span style="color:var(--state-warning-fg);font-weight:600">2026-07-19 (overdue)</span></div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toast-stack" data-toast-stack></div>
+
+<div class="scrim z-top" data-cmdk-scrim></div>
+<div class="cmdk" data-cmdk>
+  <div class="cmdk-input-row">
+    <svg class="icon icon-muted"><use href="#i-search"/></svg>
+    <input type="text" class="cmdk-input" data-cmdk-input placeholder="Search tables, changesets, actions…" autocomplete="off" />
+    <kbd>Esc</kbd>
+  </div>
+  <div class="cmdk-results" data-cmdk-results>
+    <div class="cmdk-group">Tables</div>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>fx_rates</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>limits</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>audit_log</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>counterparty_risk_limits_by_desk_and_region</span><span class="cmdk-meta">postgres-prod / sample</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-eye"/></svg><span>var_limits</span><span class="cmdk-meta">postgres-prod / risk</span></button>
+    <button class="cmdk-item" data-href="table-browser.html"><svg class="icon icon-sm icon-muted"><use href="#i-pencil"/></svg><span>instruments</span><span class="cmdk-meta">snowflake-eu</span></button>
+    <div class="cmdk-group">Changesets</div>
+    <button class="cmdk-item" data-href="changeset-detail.html"><span class="badge badge-pending" style="padding:1px 6px">Sub</span><span>Q3 FX spread widening</span><span class="cmdk-meta">sample.fx_rates</span></button>
+    <button class="cmdk-item" data-href="changeset-detail.html"><span class="badge badge-pending" style="padding:1px 6px">Sub</span><span>Raise EUR desk limit</span><span class="cmdk-meta">sample.limits</span></button>
+    <div class="cmdk-group">Actions</div>
+    <button class="cmdk-item" data-href="queue.html"><svg class="icon icon-sm icon-muted"><use href="#i-sidebar"/></svg><span>Go to Queue</span></button>
+    <button class="cmdk-item" data-action="theme"><svg class="icon icon-sm icon-muted"><use href="#i-moon"/></svg><span>Toggle theme</span></button>
+  </div>
+  <div class="cmdk-empty" data-cmdk-empty hidden>No matches. Try a table name, changeset title, or "Queue".</div>
+</div>
+
+<script src="mockup.js"></script>
+</body>
+</html>
