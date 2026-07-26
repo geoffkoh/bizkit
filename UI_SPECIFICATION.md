@@ -6,6 +6,11 @@
 > implementation follows. System behavior (states, roles, enforcement)
 > is defined in `SPECIFICATION.md`; this document defines how it is
 > presented and operated.
+>
+> **Visual reference**: [`design-mockups/`](design-mockups/) renders §2–§4
+> as standalone HTML (open `index.html` directly; no build step). It is a
+> design aid predating the craft-layer implementation — where a mockup and
+> the shipped SPA disagree, this document decides, not either of them.
 
 ## 1. Personas
 
