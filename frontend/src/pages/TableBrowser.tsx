@@ -12,7 +12,14 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, currentUser } from "../api";
 import { DataTable, type DataColumn } from "../components/DataTable";
+import { GridHeaderCell } from "../components/GridHeaderCell";
+import { Icon } from "../components/Icon";
+import { SkeletonTable } from "../components/Skeleton";
 import { Deadline, StateBadge } from "../components/StateBadge";
+import { showToast } from "../components/Toast";
+import { Tooltip } from "../components/Tooltip";
+import { Truncate } from "../components/Truncate";
+import { describeError } from "../errors";
 import type {
   ChangeItemIn,
   ChangesetOut,
@@ -36,7 +43,13 @@ const CHANGESET_TAB_COLUMNS: DataColumn<ChangesetOut>[] = [
     cell: (cs) => <StateBadge state={cs.state} />,
     size: 110,
   },
-  { id: "revision", header: "Rev", accessor: (cs) => cs.revision, size: 60 },
+  {
+    id: "revision",
+    header: "Rev",
+    accessor: (cs) => cs.revision,
+    size: 60,
+    numeric: true,
+  },
   { id: "maker", header: "Maker", accessor: (cs) => cs.maker, size: 100 },
   {
     id: "deadline",
@@ -55,17 +68,25 @@ const CHANGESET_TAB_COLUMNS: DataColumn<ChangesetOut>[] = [
 /** Grid-to-basket drafting per UI_SPECIFICATION.md §4.1 (spec D39).
  *
  * The grid is built on TanStack Table (headless): client-side
- * sort/search/pagination at config-table scale, manual server paging
- * beyond the fetch cap. Editing requires a primary key — update/delete
- * change items must carry a row key (SPECIFICATION.md §3.1), so keyless
- * tables are insert-only.
+ * sort/search/pagination at config-table scale, manual server paging beyond
+ * the fetch cap. Editing requires a primary key — update/delete change items
+ * must carry a row key (SPECIFICATION.md §3.1), so keyless tables are
+ * insert-only.
  */
 
 const FETCH_CAP = 500;
 const PAGE_SIZE = 50;
+/** Values this long get a textarea instead of a single-line input (§4.1). */
+const LONG_TEXT_CHARS = 80;
 
 function rowKey(row: Row, pkCols: string[]): string {
   return JSON.stringify(pkCols.map((c) => row[c]));
+}
+
+/** Numeric/ID columns align their figures with `tabular-nums` (§2.1). */
+function isNumericColumn(column: ColumnOut | undefined): boolean {
+  if (!column) return false;
+  return /int|dec|num|float|double|real|serial/.test(column.type.toLowerCase());
 }
 
 function coerce(column: ColumnOut, raw: string): unknown {
@@ -76,6 +97,10 @@ function coerce(column: ColumnOut, raw: string): unknown {
   }
   if (column.type === "boolean") return raw === "true" || raw === "1";
   return raw;
+}
+
+function cellText(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
 }
 
 interface Basket {
@@ -120,10 +145,11 @@ function Pager({
       <button
         type="button"
         className="chip"
+        aria-label="Previous page"
         disabled={current <= 1}
         onClick={() => onGo(current - 1)}
       >
-        ‹
+        <Icon name="chevron-left" size={16} />
       </button>
       <input
         key={current}
@@ -143,14 +169,15 @@ function Pager({
           if (n !== current) onGo(n);
         }}
       />
-      <span className="muted">/ {count}</span>
+      <span className="muted tabular">/ {count}</span>
       <button
         type="button"
         className="chip"
+        aria-label="Next page"
         disabled={current >= count}
         onClick={() => onGo(current + 1)}
       >
-        ›
+        <Icon name="chevron-right" size={16} />
       </button>
     </span>
   );
@@ -180,18 +207,35 @@ function RowEditor({
   return (
     <tr className="editing">
       <td className="col-marker" />
-      {columns.map((c) => (
-        <td key={c.name}>
-          <input
-            value={draft[c.name] ?? ""}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, [c.name]: e.target.value }))
-            }
-            placeholder={c.name}
-          />
-        </td>
-      ))}
-      <td className="row-actions">
+      {columns.map((c) => {
+        const value = draft[c.name] ?? "";
+        // §4.1's third tier: long text is edited in full, not through a
+        // single-line window onto it.
+        const longText = value.length >= LONG_TEXT_CHARS;
+        const onEdit = (next: string) =>
+          setDraft((d) => ({ ...d, [c.name]: next }));
+        return (
+          <td key={c.name}>
+            {longText ? (
+              <textarea
+                rows={3}
+                value={value}
+                aria-label={c.name}
+                placeholder={c.name}
+                onChange={(e) => onEdit(e.target.value)}
+              />
+            ) : (
+              <input
+                value={value}
+                aria-label={c.name}
+                placeholder={c.name}
+                onChange={(e) => onEdit(e.target.value)}
+              />
+            )}
+          </td>
+        );
+      })}
+      <td className="row-actions row-actions-open">
         <button
           type="button"
           className="chip"
@@ -203,9 +247,11 @@ function RowEditor({
             )
           }
         >
+          <Icon name="check" size={16} />
           {saveLabel}
         </button>
         <button type="button" className="chip" onClick={onCancel}>
+          <Icon name="close" size={16} />
           cancel
         </button>
       </td>
@@ -255,12 +301,28 @@ function ImportDialog({
       }
       const result = await api.importCsv(changesetId, file.name, mode, text);
       if (result.ok) {
+        showToast(
+          `Imported ${result.items_added} change item${
+            result.items_added === 1 ? "" : "s"
+          } from ${file.name} into the draft`,
+          "success",
+        );
         onDone(changesetId);
       } else {
+        // All-or-nothing (D36): the structured report is the actionable
+        // channel; the toast is only the ambient signal.
         setReport(result);
+        showToast(
+          `CSV import rejected — ${result.issues.length} issue${
+            result.issues.length === 1 ? "" : "s"
+          }, nothing was added`,
+          "error",
+        );
       }
     } catch (e) {
-      setError(String(e));
+      const message = describeError(e);
+      setError(message);
+      showToast(`CSV import failed: ${message}`, "error");
     } finally {
       setBusy(false);
     }
@@ -306,8 +368,8 @@ function ImportDialog({
         {report && (
           <div className="panel">
             <p className="error">
-              Import failed — nothing was added (all-or-nothing). Fix the
-              file and retry into the same draft.
+              Import failed — nothing was added (all-or-nothing). Fix the file
+              and retry into the same draft.
             </p>
             {report.issues.slice(0, 20).map((issue, i) => (
               <p key={i} className="muted">
@@ -352,10 +414,11 @@ function ReviewSlideOver({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const count = basketSize(basket);
 
   const create = useMutation({
-    mutationFn: (submitNow: boolean) =>
-      api.createChangeset({
+    mutationFn: async (submitNow: boolean) => {
+      const cs = await api.createChangeset({
         backend: table.backend,
         schema_name: table.schema_name,
         table: table.table,
@@ -363,12 +426,31 @@ function ReviewSlideOver({
         description,
         items: basketToItems(basket),
         submit_now: submitNow,
-      }),
-    onSuccess: (cs) => onDone(cs.id),
-    onError: (e) => setError(String(e)),
+      });
+      return { cs, submitNow };
+    },
+    onSuccess: ({ cs, submitNow }) => {
+      showToast(
+        submitNow
+          ? `Submitted for review: “${cs.title}” — ${count} change${
+              count === 1 ? "" : "s"
+            } on ${table.path}`
+          : `Draft saved: “${cs.title}” — ${count} change${
+              count === 1 ? "" : "s"
+            } on ${table.path}`,
+        "success",
+      );
+      onDone(cs.id);
+    },
+    onError: (e) => {
+      // Inline first (§6): the toast never replaces the message next to the
+      // control that failed.
+      const message = describeError(e);
+      setError(message);
+      showToast(message, "error");
+    },
   });
 
-  const count = basketSize(basket);
   const overCap = count > table.max_changeset_items;
 
   return (
@@ -383,20 +465,24 @@ function ReviewSlideOver({
 
         {basket.inserts.map((values, i) => (
           <div className="diff-item" key={`i${i}`}>
-            <span className="op op-insert">insert</span>
+            <span className="op op-insert" aria-label="operation: insert">
+              insert
+            </span>
             <code>{JSON.stringify(values)}</code>
           </div>
         ))}
         {[...basket.updates.values()].map(({ key, before, values }, i) => (
           <div className="diff-item" key={`u${i}`}>
-            <span className="op op-update">update</span>
+            <span className="op op-update" aria-label="operation: update">
+              update
+            </span>
             <code>{JSON.stringify(key)}</code>
             <div className="diff-cols">
               {Object.entries(values).map(([col, after]) => (
                 <div key={col}>
                   <strong>{col}</strong>:{" "}
-                  <span className="before">{String(before[col])}</span> →{" "}
-                  <span className="after">{String(after)}</span>
+                  <span className="before">{cellText(before[col])}</span> →{" "}
+                  <span className="after">{cellText(after)}</span>
                 </div>
               ))}
             </div>
@@ -404,7 +490,9 @@ function ReviewSlideOver({
         ))}
         {[...basket.deletes.values()].map((key, i) => (
           <div className="diff-item" key={`d${i}`}>
-            <span className="op op-delete">delete</span>
+            <span className="op op-delete" aria-label="operation: delete">
+              delete
+            </span>
             <code>{JSON.stringify(key)}</code>
           </div>
         ))}
@@ -475,6 +563,7 @@ export function TableBrowser() {
   const [adding, setAdding] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const { data: tables } = useQuery({
     queryKey: ["tables", user],
@@ -497,7 +586,7 @@ export function TableBrowser() {
   const serverMode = (probe?.total ?? 0) > FETCH_CAP;
   const serverSort = sorting[0]?.id ?? "";
   const serverDir: "asc" | "desc" = sorting[0]?.desc ? "desc" : "asc";
-  const { data: serverRows } = useQuery({
+  const { data: serverRows, isFetching: serverFetching } = useQuery({
     queryKey: [
       "rows",
       path,
@@ -643,6 +732,23 @@ export function TableBrowser() {
     if (serverMode) setServerPage(clamped);
     else grid.setPageIndex(clamped - 1);
   };
+  // A server-backed sort is the only case where the affordance changes at all
+  // (§4.1): spinner on the active header, the others inert until it resolves.
+  const sortBusy = serverMode && serverFetching;
+  const activeSort = sorting[0]?.id ?? null;
+
+  const discard = () => {
+    showToast(
+      `Draft discarded — ${count} unsaved change${
+        count === 1 ? "" : "s"
+      } on ${path}`,
+      "info",
+    );
+    setBasket(emptyBasket());
+    setEditingKey(null);
+    setAdding(false);
+    setConfirmDiscard(false);
+  };
 
   return (
     <>
@@ -681,6 +787,7 @@ export function TableBrowser() {
         <button
           type="button"
           className={`chip ${tab === "rows" ? "active" : ""}`}
+          aria-pressed={tab === "rows"}
           onClick={() => setTab("rows")}
         >
           Rows
@@ -688,6 +795,7 @@ export function TableBrowser() {
         <button
           type="button"
           className={`chip ${tab === "changesets" ? "active" : ""}`}
+          aria-pressed={tab === "changesets"}
           onClick={() => setTab("changesets")}
         >
           Changesets ({tableChangesets.length})
@@ -695,6 +803,7 @@ export function TableBrowser() {
         <button
           type="button"
           className={`chip ${tab === "rules" ? "active" : ""}`}
+          aria-pressed={tab === "rules"}
           onClick={() => setTab("rules")}
         >
           Rules &amp; policy ({tableConfig?.rules.length ?? 0})
@@ -704,9 +813,11 @@ export function TableBrowser() {
       {tab === "rows" && (
         <>
           {rowsError ? (
-            <p className="error">Failed to load rows: {String(rowsError)}</p>
+            <p className="error">
+              Could not load rows: {describeError(rowsError)}
+            </p>
           ) : !columns || !probe ? (
-            <p className="muted">Loading rows…</p>
+            <SkeletonTable rows={8} cols={5} />
           ) : (
             <>
               {serverMode && (
@@ -715,17 +826,11 @@ export function TableBrowser() {
                   search, and sort run server-side.
                 </p>
               )}
-              {canSubmit && !hasKey && (
-                <p className="muted">
-                  This table has no primary key, so updates/deletes cannot
-                  target rows (change items require a key) — grid drafting
-                  is <strong>insert-only</strong>.
-                </p>
-              )}
-              <p className="actions">
+              <p className="actions toolbar">
                 <input
                   className="search"
                   placeholder="Search rows…"
+                  aria-label="Search rows"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -737,15 +842,27 @@ export function TableBrowser() {
                       onClick={() => setAdding(true)}
                       disabled={adding}
                     >
-                      + Add row
+                      <Icon name="plus" size={16} />
+                      Add row
                     </button>
                     <button
                       type="button"
                       className="chip"
                       onClick={() => setImporting(true)}
                     >
-                      ⬆ Import CSV…
+                      <Icon name="upload" size={16} />
+                      Import CSV…
                     </button>
+                    {!hasKey && (
+                      <Tooltip
+                        content="This table has no primary key. Updates and deletes need a row key to target a row, so only inserts can be drafted here."
+                        focusable
+                      >
+                        <span className="chip-static">
+                          <Icon name="info" size={16} /> insert-only
+                        </span>
+                      </Tooltip>
+                    )}
                     <Link
                       className="muted"
                       to={`/tables/new?backend=${encodeURIComponent(backend)}&schema=${encodeURIComponent(schema ?? "")}&table=${encodeURIComponent(tableName)}`}
@@ -755,191 +872,254 @@ export function TableBrowser() {
                   </>
                 )}
                 <span className="spacer" />
-                {pageCount > 1 && (
-                  <Pager
-                    current={currentPage}
-                    count={pageCount}
-                    onGo={goToPage}
-                  />
-                )}
+                <Pager
+                  current={currentPage}
+                  count={pageCount}
+                  onGo={goToPage}
+                />
               </p>
               <div className="table-wrap">
-              <table className="grid">
-                <thead>
-                  <tr>
-                    <th className="col-marker" />
-                    {grid.getHeaderGroups()[0]?.headers.map((header) => {
-                      const name = header.column.id;
-                      const spec = columns.find((c) => c.name === name);
-                      const columnRules = rulesByColumn.get(name);
-                      const sorted = header.column.getIsSorted();
-                      return (
-                        <th
-                          key={header.id}
-                          className={
-                            header.column.getCanSort() ? "sortable" : ""
-                          }
-                          style={{ width: header.getSize() }}
-                          onClick={header.column.getToggleSortingHandler()}
-                          title={
-                            columnRules
-                              ? `Rules:\n• ${columnRules.join("\n• ")}`
-                              : header.column.getCanSort()
-                                ? "click to sort"
-                                : ""
-                          }
-                        >
-                          {name}
-                          {spec?.primary_key && (
-                            <span className="muted"> ⚿</span>
-                          )}
-                          {columnRules && <span className="rule-dot">●</span>}
-                          {sorted && (
-                            <span className="sort-ind">
-                              {sorted === "asc" ? " ▲" : " ▼"}
-                            </span>
-                          )}
-                          <span
-                            className={`col-resizer ${
-                              header.column.getIsResizing() ? "resizing" : ""
-                            }`}
-                            onMouseDown={header.getResizeHandler()}
-                            onTouchStart={header.getResizeHandler()}
-                            onClick={(e) => e.stopPropagation()}
+                <table className="grid">
+                  <thead>
+                    <tr>
+                      <th className="col-marker" />
+                      {grid.getHeaderGroups()[0]?.headers.map((header) => {
+                        const name = header.column.id;
+                        const spec = columns.find((c) => c.name === name);
+                        const columnRules = rulesByColumn.get(name);
+                        return (
+                          <GridHeaderCell
+                            key={header.id}
+                            label={name}
+                            width={header.getSize()}
+                            canSort={header.column.getCanSort()}
+                            sorted={header.column.getIsSorted()}
+                            busy={sortBusy && activeSort === name}
+                            inert={sortBusy && activeSort !== name}
+                            numeric={isNumericColumn(spec)}
+                            onSort={header.column.getToggleSortingHandler()}
+                            resizeHandler={header.getResizeHandler()}
+                            resizing={header.column.getIsResizing()}
+                            extras={
+                              spec?.primary_key ? (
+                                <Icon
+                                  name="key"
+                                  size={16}
+                                  className="muted"
+                                  title="primary key"
+                                />
+                              ) : undefined
+                            }
+                            aside={
+                              columnRules ? (
+                                <Tooltip
+                                  content={`Validation rules:\n• ${columnRules.join("\n• ")}`}
+                                  focusable
+                                  hoverOnly
+                                >
+                                  <span
+                                    className="rule-dot"
+                                    role="img"
+                                    aria-label={`${columnRules.length} validation rule(s) on ${name}`}
+                                  />
+                                </Tooltip>
+                              ) : undefined
+                            }
                           />
-                        </th>
-                      );
-                    })}
-                    {canSubmit && <th className="actions-col" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {adding && (
-                    <RowEditor
-                      columns={columns}
-                      initial={{}}
-                      saveLabel="add"
-                      onCancel={() => setAdding(false)}
-                      onSave={(values) => {
-                        setBasket((b) => ({
-                          ...b,
-                          inserts: [...b.inserts, values],
-                        }));
-                        setAdding(false);
-                      }}
-                    />
-                  )}
-                  {basket.inserts.map((values, i) => (
-                    <tr key={`new${i}`} className="row-insert">
-                      <td className="col-marker">
-                        <span className="op op-insert">new</span>
-                      </td>
-                      {columns.map((c) => (
-                        <td key={c.name}>{String(values[c.name] ?? "")}</td>
-                      ))}
-                      <td className="row-actions">
-                        <button
-                          type="button"
-                          className="chip"
-                          onClick={() =>
-                            setBasket((b) => ({
-                              ...b,
-                              inserts: b.inserts.filter((_, j) => j !== i),
-                            }))
-                          }
-                        >
-                          undo
-                        </button>
-                      </td>
+                        );
+                      })}
+                      {canSubmit && <th className="actions-col" />}
                     </tr>
-                  ))}
-                  {grid.getRowModel().rows.map((gridRow) => {
-                    const row = gridRow.original;
-                    const k = hasKey ? rowKey(row, pkCols) : gridRow.id;
-                    if (canEditRows && editingKey === k) {
-                      return (
-                        <RowEditor
-                          key={k}
-                          columns={columns}
-                          initial={{
-                            ...row,
-                            ...(basket.updates.get(k)?.values ?? {}),
-                          }}
-                          saveLabel="apply"
-                          onCancel={() => setEditingKey(null)}
-                          onSave={(values) => saveEdit(row, values)}
-                        />
-                      );
-                    }
-                    const pendingUpdate = hasKey
-                      ? basket.updates.get(k)
-                      : undefined;
-                    const pendingDelete = hasKey && basket.deletes.has(k);
-                    return (
-                      <tr
-                        key={k}
-                        className={
-                          pendingDelete
-                            ? "row-delete"
-                            : pendingUpdate
-                              ? "row-update"
-                              : ""
-                        }
-                      >
+                  </thead>
+                  <tbody>
+                    {adding && (
+                      <RowEditor
+                        columns={columns}
+                        initial={{}}
+                        saveLabel="add"
+                        onCancel={() => setAdding(false)}
+                        onSave={(values) => {
+                          setBasket((b) => ({
+                            ...b,
+                            inserts: [...b.inserts, values],
+                          }));
+                          setAdding(false);
+                        }}
+                      />
+                    )}
+                    {basket.inserts.map((values, i) => (
+                      <tr key={`new${i}`} className="row-insert">
                         <td className="col-marker">
-                          {pendingUpdate && (
-                            <span className="op op-update">edit</span>
-                          )}
-                          {pendingDelete && (
-                            <span className="op op-delete">del</span>
-                          )}
+                          <span
+                            className="op op-insert"
+                            aria-label="operation: insert"
+                          >
+                            new
+                          </span>
                         </td>
-                        {columns.map((c) => {
-                          const changed =
-                            pendingUpdate && c.name in pendingUpdate.values;
-                          return (
-                            <td
-                              key={c.name}
-                              className={changed ? "changed" : ""}
-                            >
-                              {String(
-                                changed
-                                  ? pendingUpdate.values[c.name]
-                                  : (row[c.name] ?? ""),
-                              )}
-                            </td>
-                          );
-                        })}
+                        {columns.map((c) => (
+                          <td
+                            key={c.name}
+                            className={
+                              isNumericColumn(c) ? "tabular" : undefined
+                            }
+                          >
+                            <Truncate text={cellText(values[c.name])} />
+                          </td>
+                        ))}
                         {canSubmit && (
                           <td className="row-actions">
-                            {canEditRows && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="chip"
-                                  onClick={() => setEditingKey(k)}
-                                  disabled={pendingDelete}
-                                >
-                                  edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="chip"
-                                  onClick={() => toggleDelete(row)}
-                                >
-                                  {pendingDelete ? "undo" : "delete"}
-                                </button>
-                              </>
-                            )}
+                            <Tooltip content="Remove this pending insert">
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() =>
+                                  setBasket((b) => ({
+                                    ...b,
+                                    inserts: b.inserts.filter(
+                                      (_, j) => j !== i,
+                                    ),
+                                  }))
+                                }
+                                aria-label="Undo this pending insert"
+                              >
+                                <Icon name="undo" size={16} />
+                              </button>
+                            </Tooltip>
                           </td>
                         )}
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ))}
+                    {grid.getRowModel().rows.map((gridRow) => {
+                      const row = gridRow.original;
+                      const k = hasKey ? rowKey(row, pkCols) : gridRow.id;
+                      if (canEditRows && editingKey === k) {
+                        return (
+                          <RowEditor
+                            key={k}
+                            columns={columns}
+                            initial={{
+                              ...row,
+                              ...(basket.updates.get(k)?.values ?? {}),
+                            }}
+                            saveLabel="apply"
+                            onCancel={() => setEditingKey(null)}
+                            onSave={(values) => saveEdit(row, values)}
+                          />
+                        );
+                      }
+                      const pendingUpdate = hasKey
+                        ? basket.updates.get(k)
+                        : undefined;
+                      const pendingDelete = hasKey && basket.deletes.has(k);
+                      return (
+                        <tr
+                          key={k}
+                          className={
+                            pendingDelete
+                              ? "row-delete"
+                              : pendingUpdate
+                                ? "row-update"
+                                : ""
+                          }
+                        >
+                          <td className="col-marker">
+                            {pendingUpdate && (
+                              <span
+                                className="op op-update"
+                                aria-label="operation: update"
+                              >
+                                edit
+                              </span>
+                            )}
+                            {pendingDelete && (
+                              <span
+                                className="op op-delete"
+                                aria-label="operation: delete"
+                              >
+                                del
+                              </span>
+                            )}
+                          </td>
+                          {columns.map((c) => {
+                            const changed =
+                              pendingUpdate && c.name in pendingUpdate.values;
+                            return (
+                              <td
+                                key={c.name}
+                                className={[
+                                  changed ? "changed" : "",
+                                  isNumericColumn(c) ? "tabular" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                              >
+                                <Truncate
+                                  text={cellText(
+                                    changed
+                                      ? pendingUpdate.values[c.name]
+                                      : row[c.name],
+                                  )}
+                                />
+                              </td>
+                            );
+                          })}
+                          {canSubmit && (
+                            <td className="row-actions">
+                              {canEditRows && (
+                                <>
+                              <Tooltip
+                                content={
+                                  pendingDelete
+                                    ? "Undo the delete before editing this row"
+                                    : "Edit this row"
+                                }
+                                focusable={pendingDelete}
+                              >
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  onClick={() => setEditingKey(k)}
+                                  disabled={pendingDelete}
+                                  aria-label="Edit this row"
+                                >
+                                  <Icon name="pencil" size={16} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip
+                                content={
+                                  pendingDelete
+                                    ? "Keep this row after all"
+                                    : "Draft a delete for this row"
+                                }
+                              >
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  onClick={() => toggleDelete(row)}
+                                  aria-label={
+                                    pendingDelete
+                                      ? "Undo the drafted delete"
+                                      : "Draft a delete for this row"
+                                  }
+                                >
+                                  <Icon
+                                    name={pendingDelete ? "undo" : "trash"}
+                                    size={16}
+                                  />
+                                </button>
+                              </Tooltip>
+                                </>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <p className="muted">
+              <p className="muted tabular">
                 {filteredCount.toLocaleString()}
                 {search && filteredCount !== totalRows
                   ? ` of ${totalRows.toLocaleString()}`
@@ -956,7 +1136,7 @@ export function TableBrowser() {
           columns={CHANGESET_TAB_COLUMNS}
           data={tableChangesets}
           rowKey={(cs) => cs.id}
-          emptyText="No changesets touch this table yet."
+          emptyText="No changesets touch this table yet — draft one from the Rows tab."
         />
       )}
 
@@ -988,7 +1168,7 @@ export function TableBrowser() {
                 )}
               </dd>
               <dt>Max changeset items</dt>
-              <dd>{tableConfig.max_changeset_items}</dd>
+              <dd className="tabular">{tableConfig.max_changeset_items}</dd>
             </dl>
           </div>
           <div className="panel">
@@ -1035,15 +1215,22 @@ export function TableBrowser() {
             {basket.deletes.size} delete)
           </span>
           <span className="spacer" />
-          <button
-            type="button"
-            onClick={() => {
-              setBasket(emptyBasket());
-              setEditingKey(null);
-            }}
-          >
-            Discard
-          </button>
+          {confirmDiscard ? (
+            <>
+              <span className="muted">Discard all of it?</span>
+              <button type="button" className="danger" onClick={discard}>
+                Yes, discard
+              </button>
+              <button type="button" onClick={() => setConfirmDiscard(false)}>
+                Keep editing
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setConfirmDiscard(true)}>
+              <Icon name="trash" size={16} />
+              Discard
+            </button>
+          )}
           <button
             type="button"
             className="primary"

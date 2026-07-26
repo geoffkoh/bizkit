@@ -1,20 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, currentUser } from "../api";
+import { Icon } from "../components/Icon";
+import { SkeletonLines, SkeletonTable } from "../components/Skeleton";
 import { Deadline, StateBadge } from "../components/StateBadge";
+import { showToast } from "../components/Toast";
+import { describeError } from "../errors";
+import { tableRouteFromPath } from "../routes";
 import type {
   ChangesetDetailOut,
   CommentOut,
   TableActionsOut,
 } from "../types";
 
-function tableRouteFromPath(path: string): string {
-  const [backend, schema, table] = path.split("/");
-  return `/t/${encodeURIComponent(backend)}/${encodeURIComponent(
-    schema || "-",
-  )}/${encodeURIComponent(table)}`;
-}
+/** Changeset detail (UI_SPECIFICATION.md §4.3).
+ *
+ * Section order is fixed by the spec: header → metadata → change items →
+ * actions → decisions → comments → audit trail. Actions render only when they
+ * are legal in the current state for this caller's capacity (§4.3's state ×
+ * capacity table), and every one surfaces a 403/409 inline as well as through
+ * a toast.
+ */
 
 function useTableActions(path: string): TableActionsOut | undefined {
   const user = currentUser();
@@ -25,7 +32,7 @@ function useTableActions(path: string): TableActionsOut | undefined {
   return tables?.find((t) => t.path === path)?.actions;
 }
 
-function Items({ changeset }: { changeset: ChangesetDetailOut }) {
+function Items({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element {
   if (changeset.items.length === 0)
     return <p className="muted">No change items.</p>;
   return (
@@ -41,7 +48,12 @@ function Items({ changeset }: { changeset: ChangesetDetailOut }) {
         {changeset.items.map((item, i) => (
           <tr key={i} className={`op-${item.op}`}>
             <td>
-              <span className={`op op-${item.op}`}>{item.op}</span>
+              <span
+                className={`op op-${item.op}`}
+                aria-label={`operation: ${item.op}`}
+              >
+                {item.op}
+              </span>
             </td>
             <td>
               <code>{item.key ? JSON.stringify(item.key) : "—"}</code>
@@ -56,27 +68,46 @@ function Items({ changeset }: { changeset: ChangesetDetailOut }) {
   );
 }
 
-function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
+interface WorkflowAction {
+  /** Toast copy on success — names what happened to what. */
+  success: string;
+  run: () => Promise<ChangesetDetailOut>;
+}
+
+function Actions({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element {
   const user = currentUser();
   const tableActions = useTableActions(changeset.table);
-  const canReview = tableActions?.approve ?? true;
+  // Affordance only (D25): closed until the server says otherwise, and a 403
+  // is still handled if affordance and enforcement disagree.
+  const canReview = tableActions?.approve ?? false;
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
 
   const act = useMutation({
-    mutationFn: (fn: () => Promise<ChangesetDetailOut>) => fn(),
-    onSuccess: () => {
+    mutationFn: (action: WorkflowAction) =>
+      action.run().then((result) => ({ result, action })),
+    onSuccess: ({ action }) => {
       setActionError(null);
       setReason("");
+      setConfirmWithdraw(false);
+      showToast(action.success, "success");
       void queryClient.invalidateQueries();
     },
-    onError: (e) => setActionError(String(e)),
+    onError: (error) => {
+      // §6: inline next to the control AND an ambient toast — never one or
+      // the other.
+      const message = describeError(error);
+      setActionError(message);
+      showToast(message, "error");
+    },
   });
 
   const isMaker = user === changeset.maker;
   const state = changeset.state;
-  const buttons: React.ReactNode[] = [];
+  const label = `“${changeset.title}”`;
+  const buttons: ReactNode[] = [];
 
   if (state === "draft" && isMaker) {
     buttons.push(
@@ -84,21 +115,52 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
         key="submit"
         type="button"
         className="primary"
-        onClick={() => act.mutate(() => api.submit(changeset.id))}
+        disabled={act.isPending}
+        onClick={() =>
+          act.mutate({
+            run: () => api.submit(changeset.id),
+            success: `Submitted ${label} for review (revision ${
+              changeset.revision + 1
+            })`,
+          })
+        }
       >
         Submit for review
       </button>,
     );
   }
   if ((state === "draft" || state === "submitted") && isMaker) {
+    // Destructive: inline two-click confirmation (§6), never a modal.
     buttons.push(
-      <button
-        key="withdraw"
-        type="button"
-        onClick={() => act.mutate(() => api.withdraw(changeset.id))}
-      >
-        Withdraw
-      </button>,
+      confirmWithdraw ? (
+        <span className="confirm" key="withdraw">
+          <span className="muted">Withdraw {label}?</span>
+          <button
+            type="button"
+            className="danger"
+            disabled={act.isPending}
+            onClick={() =>
+              act.mutate({
+                run: () => api.withdraw(changeset.id),
+                success: `Withdrew ${label}`,
+              })
+            }
+          >
+            Yes, withdraw
+          </button>
+          <button type="button" onClick={() => setConfirmWithdraw(false)}>
+            Keep it
+          </button>
+        </span>
+      ) : (
+        <button
+          key="withdraw"
+          type="button"
+          onClick={() => setConfirmWithdraw(true)}
+        >
+          Withdraw
+        </button>
+      ),
     );
   }
   if (state === "submitted" && !isMaker && canReview) {
@@ -107,7 +169,13 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
         key="approve"
         type="button"
         className="primary"
-        onClick={() => act.mutate(() => api.approve(changeset.id, reason))}
+        disabled={act.isPending}
+        onClick={() =>
+          act.mutate({
+            run: () => api.approve(changeset.id, reason),
+            success: `Approved ${label} at revision ${changeset.revision}`,
+          })
+        }
       >
         Approve
       </button>,
@@ -115,12 +183,16 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
         key="reject"
         type="button"
         className="danger"
+        disabled={act.isPending}
         onClick={() => {
           if (!reason.trim()) {
             setActionError("Rejection requires a reason — fill the box first");
             return;
           }
-          act.mutate(() => api.reject(changeset.id, reason));
+          act.mutate({
+            run: () => api.reject(changeset.id, reason),
+            success: `Rejected ${label} at revision ${changeset.revision}`,
+          });
         }}
       >
         Reject
@@ -136,7 +208,13 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
         key="rework"
         type="button"
         className="primary"
-        onClick={() => act.mutate(() => api.rework(changeset.id))}
+        disabled={act.isPending}
+        onClick={() =>
+          act.mutate({
+            run: () => api.rework(changeset.id),
+            success: `Reopened ${label} as a draft for rework`,
+          })
+        }
       >
         Rework (back to draft)
       </button>,
@@ -153,7 +231,7 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }) {
         </p>
       )}
       {state === "submitted" && !isMaker && canReview && (
-        <label>
+        <label className="review-note">
           Review note{" "}
           <input
             value={reason}
@@ -183,7 +261,7 @@ function CommentNode({
   comment: CommentOut;
   all: CommentOut[];
   onReply: (parentId: string) => void;
-}) {
+}): JSX.Element {
   const replies = all.filter((c) => c.parent_id === comment.id);
   return (
     <div className="comment">
@@ -218,30 +296,39 @@ function Comments({
 }: {
   changesetId: string;
   tablePath: string;
-}) {
+}): JSX.Element {
   const tableActions = useTableActions(tablePath);
-  const canComment = tableActions?.comment ?? true;
+  // Readers get no composer at all (§5 visibility matrix, D38).
+  const canComment = tableActions?.comment ?? false;
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
   const [parentId, setParentId] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["comments", changesetId],
     queryFn: () => api.listComments(changesetId),
   });
 
   const post = useMutation({
     mutationFn: () => api.addComment(changesetId, body, parentId),
-    onSuccess: () => {
+    onSuccess: (comment) => {
       setBody("");
       setParentId(null);
       setCommentError(null);
+      showToast(
+        comment.parent_id ? "Reply posted" : "Comment posted",
+        "success",
+      );
       void queryClient.invalidateQueries({
         queryKey: ["comments", changesetId],
       });
     },
-    onError: (e) => setCommentError(String(e)),
+    onError: (error) => {
+      const message = describeError(error);
+      setCommentError(message);
+      showToast(message, "error");
+    },
   });
 
   const roots = (data ?? []).filter((c) => c.parent_id === null);
@@ -250,7 +337,12 @@ function Comments({
   return (
     <div className="panel">
       <h2>Comments</h2>
-      {roots.length === 0 && <p className="muted">No comments yet.</p>}
+      {isLoading && <p className="muted">Loading…</p>}
+      {!isLoading && roots.length === 0 && (
+        <p className="muted">
+          No comments yet{canComment ? " — start the thread below." : "."}
+        </p>
+      )}
       {roots.map((c) => (
         <CommentNode
           key={c.id}
@@ -261,47 +353,52 @@ function Comments({
       ))}
       {!canComment && (
         <p className="muted">
-          You have read-only access to this table — commenting is for
-          makers and checkers.
+          You have read-only access to this table — commenting is for makers
+          and checkers.
         </p>
       )}
       {canComment && (
-      <div className="comment-form">
-        {parent && (
-          <p className="muted">
-            Replying to <strong>{parent.author}</strong>{" "}
+        <div className="comment-form">
+          {parent && (
+            <p className="muted">
+              Replying to <strong>{parent.author}</strong>{" "}
+              <button
+                type="button"
+                className="chip"
+                onClick={() => setParentId(null)}
+              >
+                cancel
+              </button>
+            </p>
+          )}
+          <textarea
+            rows={2}
+            value={body}
+            aria-label="Comment"
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Add a comment…"
+          />
+          <p className="actions">
             <button
               type="button"
-              className="chip"
-              onClick={() => setParentId(null)}
+              onClick={() => body.trim() && post.mutate()}
+              disabled={post.isPending || !body.trim()}
             >
-              cancel
+              Comment
             </button>
           </p>
-        )}
-        <textarea
-          rows={2}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Add a comment…"
-        />
-        <p className="actions">
-          <button
-            type="button"
-            onClick={() => body.trim() && post.mutate()}
-            disabled={post.isPending}
-          >
-            Comment
-          </button>
-        </p>
-        {commentError && <p className="error">{commentError}</p>}
-      </div>
+          {commentError && <p className="error">{commentError}</p>}
+        </div>
       )}
     </div>
   );
 }
 
-function Decisions({ changesetId }: { changesetId: string }) {
+function Decisions({
+  changesetId,
+}: {
+  changesetId: string;
+}): JSX.Element | null {
   const { data } = useQuery({
     queryKey: ["decisions", changesetId],
     queryFn: () => api.listDecisions(changesetId),
@@ -312,21 +409,41 @@ function Decisions({ changesetId }: { changesetId: string }) {
       <h2>Review decisions</h2>
       {data.map((d, i) => (
         <p key={i}>
-          <strong>{d.checker}</strong> {d.decision}d revision {d.revision}
-          {d.self_approved && <span className="badge-self">SELF-APPROVED</span>}
+          <strong>{d.checker}</strong> {d.decision}d revision{" "}
+          <span className="tabular">{d.revision}</span>
+          {d.self_approved && (
+            <span className="badge-self" aria-label="self-approved decision">
+              SELF-APPROVED
+            </span>
+          )}
           {d.reason && <span className="muted"> — “{d.reason}”</span>}
-          <span className="muted"> · {new Date(d.decided_at).toLocaleString()}</span>
+          <span className="muted">
+            {" "}
+            · {new Date(d.decided_at).toLocaleString()}
+          </span>
         </p>
       ))}
     </div>
   );
 }
 
-function AuditTrail({ changesetId }: { changesetId: string }) {
-  const { data } = useQuery({
+function AuditTrail({
+  changesetId,
+}: {
+  changesetId: string;
+}): JSX.Element | null {
+  const { data, isLoading } = useQuery({
     queryKey: ["audit", changesetId],
     queryFn: () => api.listAudit(changesetId),
   });
+  if (isLoading) {
+    return (
+      <div className="panel">
+        <h2>Audit trail</h2>
+        <SkeletonTable rows={3} cols={5} label="Loading audit trail…" />
+      </div>
+    );
+  }
   if (!data || data.length === 0) return null;
   return (
     <div className="panel">
@@ -361,15 +478,23 @@ function AuditTrail({ changesetId }: { changesetId: string }) {
   );
 }
 
-export function ChangesetDetail() {
+export function ChangesetDetail(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, error } = useQuery({
     queryKey: ["changesets", id],
     queryFn: () => api.getChangeset(id!),
     enabled: Boolean(id),
   });
+  // Same cache entry as the Decisions panel below: §2.5 wants the badge on the
+  // detail surface as well as in the decision list.
+  const { data: decisions } = useQuery({
+    queryKey: ["decisions", id],
+    queryFn: () => api.listDecisions(id!),
+    enabled: Boolean(id),
+  });
+  const selfApproved = (decisions ?? []).some((d) => d.self_approved);
 
-  if (isLoading) return <p className="muted">Loading…</p>;
+  if (isLoading) return <SkeletonLines lines={4} label="Loading changeset…" />;
   if (error instanceof ApiError && error.status === 404) {
     return (
       <p className="error">
@@ -378,15 +503,23 @@ export function ChangesetDetail() {
     );
   }
   if (error || !data)
-    return <p className="error">Failed to load: {String(error)}</p>;
+    return <p className="error">Could not load: {describeError(error)}</p>;
 
   return (
     <>
       <p>
-        <Link to="/">← All changesets</Link>
+        <Link to="/" className="back-link">
+          <Icon name="chevron-left" size={16} />
+          All changesets
+        </Link>
       </p>
       <h1>
         {data.title} <StateBadge state={data.state} />
+        {selfApproved && (
+          <span className="badge-self" aria-label="self-approved decision">
+            SELF-APPROVED
+          </span>
+        )}
       </h1>
       {data.description && <p>{data.description}</p>}
       <dl>
@@ -400,7 +533,7 @@ export function ChangesetDetail() {
         <dd>{data.maker}</dd>
         <dt>Revision</dt>
         <dd>
-          {data.revision}
+          <span className="tabular">{data.revision}</span>
           <span className="muted">
             {" "}
             — approvals bind to the exact revision reviewed

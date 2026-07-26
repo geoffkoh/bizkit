@@ -1,7 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type JSX } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, currentUser } from "../api";
+import { Icon } from "../components/Icon";
+import { showToast } from "../components/Toast";
+import { describeError } from "../errors";
 import type { ChangeItemIn, ChangeOp } from "../types";
 
 interface ItemDraft {
@@ -34,7 +37,42 @@ function parseItem(draft: ItemDraft, index: number): ChangeItemIn {
   };
 }
 
-export function NewChangeset() {
+function TablePicker(): JSX.Element {
+  const user = currentUser();
+  const { data: tables } = useQuery({
+    queryKey: ["tables", user],
+    queryFn: api.listTables,
+  });
+  const drafts = (tables ?? []).filter((t) => t.actions.submit);
+  return (
+    <>
+      <h1>New changeset</h1>
+      {drafts.length === 0 ? (
+        <p className="muted">
+          You cannot raise changesets on any table yet — ask for a maker grant
+          on the table you need.
+        </p>
+      ) : (
+        <>
+          <p className="muted">Pick the table this change targets.</p>
+          <ul className="plain-list">
+            {drafts.map((t) => (
+              <li key={t.path}>
+                <Link
+                  to={`/tables/new?backend=${encodeURIComponent(t.backend)}&schema=${encodeURIComponent(t.schema_name ?? "")}&table=${encodeURIComponent(t.table)}`}
+                >
+                  <code>{t.path}</code>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+export function NewChangeset(): JSX.Element {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -49,6 +87,7 @@ export function NewChangeset() {
     { op: "insert", key: "", values: "{}" },
   ]);
   const [formError, setFormError] = useState<string | null>(null);
+  const hasTarget = backend !== "" && table !== "";
 
   const create = useMutation({
     mutationFn: (submitNow: boolean) =>
@@ -62,10 +101,20 @@ export function NewChangeset() {
         submit_now: submitNow,
       }),
     onSuccess: (changeset) => {
+      showToast(
+        changeset.state === "submitted"
+          ? `Submitted for review: \u201c${changeset.title}\u201d — ${changeset.item_count} change item(s) on ${changeset.table}`
+          : `Draft saved: \u201c${changeset.title}\u201d — ${changeset.item_count} change item(s) on ${changeset.table}`,
+        "success",
+      );
       void queryClient.invalidateQueries({ queryKey: ["changesets"] });
       void navigate(`/changesets/${changeset.id}`);
     },
-    onError: (e) => setFormError(String(e)),
+    onError: (e) => {
+      const message = describeError(e);
+      setFormError(message);
+      showToast(message, "error");
+    },
   });
 
   const attempt = (submitNow: boolean) => {
@@ -89,10 +138,15 @@ export function NewChangeset() {
     );
   };
 
+  if (!hasTarget) return <TablePicker />;
+
   return (
     <>
       <p>
-        <Link to="/tables">← Tables</Link>
+        <Link to="/" className="back-link">
+          <Icon name="chevron-left" size={16} />
+          All changesets
+        </Link>
       </p>
       <h1>
         New changeset on{" "}

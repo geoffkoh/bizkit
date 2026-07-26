@@ -1,10 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import { Link } from "react-router-dom";
 import { api, currentUser } from "../api";
 import { DataTable, type DataColumn } from "../components/DataTable";
+import { SkeletonTable } from "../components/Skeleton";
 import { Deadline, StateBadge } from "../components/StateBadge";
+import { describeError } from "../errors";
+import { approveRightsByPath, awaitsMyReview } from "../queue";
 import type { ChangesetOut } from "../types";
+
+/** The Queue (UI_SPECIFICATION.md §4.2): filters, free-text search, and one
+ * sentence + the next action for every empty state (§6). */
 
 type Filter = "all" | "to-review" | "mine";
 
@@ -35,12 +41,14 @@ const COLUMNS: DataColumn<ChangesetOut>[] = [
     header: "Rev",
     accessor: (cs) => cs.revision,
     size: 60,
+    numeric: true,
   },
   {
     id: "items",
     header: "Items",
     accessor: (cs) => cs.item_count,
     size: 70,
+    numeric: true,
   },
   {
     id: "maker",
@@ -71,7 +79,7 @@ const COLUMNS: DataColumn<ChangesetOut>[] = [
   },
 ];
 
-export function ChangesetList() {
+export function ChangesetList(): JSX.Element {
   const user = currentUser();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -79,25 +87,23 @@ export function ChangesetList() {
     queryKey: ["changesets"],
     queryFn: api.listChangesets,
   });
+  // Same query the sidebar uses; drives the approve-right half of "to review".
+  const { data: tables } = useQuery({
+    queryKey: ["tables", user],
+    queryFn: api.listTables,
+  });
+  const approveRights = approveRightsByPath(tables);
 
-  if (isLoading) return <p className="muted">Loading changesets…</p>;
-  if (error) return <p className="error">Failed to load: {String(error)}</p>;
-  if (!data || data.length === 0) {
+  if (error) {
     return (
-      <p className="muted">
-        No changesets yet. Seed a demo with{" "}
-        <code>bizkit init-store --seed-sample</code>, or start one from a
-        table in the sidebar.
-      </p>
+      <p className="error">Could not load changesets: {describeError(error)}</p>
     );
   }
 
+  const all = data ?? [];
   const q = search.trim().toLowerCase();
-  const visible = data.filter((cs) => {
-    if (
-      filter === "to-review" &&
-      !(cs.state === "submitted" && cs.maker !== user)
-    )
+  const visible = all.filter((cs) => {
+    if (filter === "to-review" && !awaitsMyReview(cs, user, approveRights))
       return false;
     if (filter === "mine" && cs.maker !== user) return false;
     if (
@@ -110,6 +116,16 @@ export function ChangesetList() {
     return true;
   });
 
+  // §6 empty states: one sentence and the next action, specific to why the
+  // list is empty.
+  const emptyText = q
+    ? `Nothing matches “${search.trim()}” — clear the search to see the rest.`
+    : filter === "to-review"
+      ? "Nothing is awaiting your review — you are clear."
+      : filter === "mine"
+        ? "You have not raised any changesets yet — open a table from the Tables section in the sidebar to draft one."
+        : "No changesets yet — open a table from the Tables section in the sidebar to draft the first one.";
+
   return (
     <>
       <h1>Changesets</h1>
@@ -119,6 +135,7 @@ export function ChangesetList() {
             key={f}
             type="button"
             className={`chip ${filter === f ? "active" : ""}`}
+            aria-pressed={filter === f}
             onClick={() => setFilter(f)}
           >
             {f === "to-review" ? `to review (as ${user})` : f}
@@ -127,16 +144,21 @@ export function ChangesetList() {
         <input
           className="search"
           placeholder="Search title, table, maker, state…"
+          aria-label="Search changesets"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </p>
-      <DataTable
-        columns={COLUMNS}
-        data={visible}
-        rowKey={(cs) => cs.id}
-        emptyText="Nothing in this view."
-      />
+      {isLoading ? (
+        <SkeletonTable rows={6} cols={6} label="Loading changesets…" />
+      ) : (
+        <DataTable
+          columns={COLUMNS}
+          data={visible}
+          rowKey={(cs) => cs.id}
+          emptyText={emptyText}
+        />
+      )}
     </>
   );
 }
