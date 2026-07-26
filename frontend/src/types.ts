@@ -41,8 +41,39 @@ export interface TableActionsOut {
   submit: boolean;
   approve: boolean;
   reject: boolean;
+  /** `apply` belongs to the checker role in the default mapping, not maker. */
+  apply: boolean;
   comment: boolean;
   view: boolean;
+}
+
+export interface ValidationIssueOut {
+  rule_id: string;
+  table: string;
+  row_key: Record<string, unknown> | null;
+  column: string | null;
+  severity: "error" | "warning";
+  message: string;
+}
+
+export interface ValidationReportOut {
+  ok: boolean;
+  issues: ValidationIssueOut[];
+}
+
+/**
+ * `POST /api/v1/changesets/{id}/apply`.
+ *
+ * A target-side failure comes back as a 200 with `ok: false` and the
+ * changeset in `failed` — the attempt is a recorded transition, so the UI
+ * renders the reason rather than treating it as a transport error. Refusals
+ * that change nothing (no rights, wrong state) are still 403/409.
+ */
+export interface ApplyResultOut {
+  ok: boolean;
+  changeset: ChangesetDetailOut;
+  report: ValidationReportOut | null;
+  error: string | null;
 }
 
 export interface RuleOut {

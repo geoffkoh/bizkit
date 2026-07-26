@@ -60,7 +60,22 @@ them divergent.
   versioned per registered configuration table — by content fingerprint
   under the default file-first workspace config (spec D22), or as rows in
   the optional store-backed registry (`bizkit_table_configs` /
-  `bizkit_rule_sets`).
+  `bizkit_rule_sets`). Evaluation (spec D44): `BaseRule.evaluate(item,
+  context)` takes a `RuleContext(table, rows_for)` whose `rows_for` is a
+  lazy per-referenced-table read-only fetch. Two conventions hold for
+  every kind — a DELETE carries no values so value-shaped rules skip it,
+  and a column absent from an UPDATE is **unchanged, not null** (absence
+  only means something on INSERT). `CrossFieldRule.predicate` resolves
+  against the closed registry in `domain/predicates.py`; an unregistered
+  id is a validation *issue*, never an import of behaviour.
+- **Apply / `ApplyResult`** (spec D44): `WorkflowService.apply` returns
+  `ApplyResult(changeset, report, error)`, not a bare `Changeset`. A
+  validation or target-side failure is a **result** — the changeset moves
+  to FAILED and that transition plus its `apply_failed` audit event have
+  to be committed, which raising would unwind. Pre-conditions that change
+  nothing (no `apply` right, wrong state, lapsed deadline) still raise.
+  `Action.APPLY` belongs to **checker**, not maker, in the default
+  `ROLE_ACTIONS`.
 - **Identity / `AuthProvider`** (spec D42): authentication ("who is
   this?") is a separate port from `AccessPolicy` ("what can they do?").
   Every `AuthProvider` adapter (`none`, `oidc`, `ldap`, `token` —
@@ -150,14 +165,22 @@ Drivers are optional and lazy-imported; a missing driver raises
 - **Run integration matrix:** see the `db-matrix-test` skill
 - **Lint/Format:** `uv run ruff check .` and `uv run ruff format .`
 - **Type check:** `uv run mypy .`
+- **Frontend tests:** `cd frontend && npm test` (vitest + React Testing
+  Library + jsdom; `npm run test:watch` while iterating). Component tests
+  navigate via `MemoryRouter` and real links — a data router builds a
+  `Request` whose `AbortSignal` jsdom does not satisfy.
 - **Rebuild frontend:** `cd frontend && npm install && npm run build`
   (Node 18+; outputs the committed bundle to `src/bizkit/api/static/`.
   End users need no Node.)
+- **Apply a changeset:** `uv run bizkit --config <ws> apply <id> --actor
+  <who> [--dry-run]`; `… validate <id>` for a report only.
 
 ## Hard Constraints
 - **Target DBs are written only by `BaseBackend.apply()` on an APPROVED
   changeset.** No API route, CLI command, or service may write to a target
-  database directly. `dry_run()` must leave the target unchanged.
+  database directly. `dry_run()` must leave the target unchanged. The one
+  route that reaches a target (`POST …/apply`) does nothing but delegate to
+  `WorkflowService.apply`.
 - **All state transitions go through `WorkflowService`** (which delegates to
   `Changeset.transition()`). Never mutate a changeset's status via a
   repository update.
@@ -186,7 +209,20 @@ Drivers are optional and lazy-imported; a missing driver raises
   `create_app()` refuses to start with `auth.provider: none` unless
   `auth.allow_insecure_dev_mode: true` is also set.
 - **Validation runs at submit AND again immediately before apply** — target
-  state may drift between approval and apply.
+  state may drift between approval and apply. Both runs are wired (D44):
+  submit raises `ValidationFailedError` carrying the report and does not
+  transition; the pre-apply run is what catches drift. A consequence to
+  remember when writing fixtures or demo data: an *invalid* changeset can
+  no longer be submitted at all, so a REJECTED example must be a valid
+  change declined on business grounds.
+- **Target writes go through one inherited DML implementation** — `BaseBackend`
+  on SQLAlchemy Core against the reflected table (D44), shared by
+  `dry_run()` and `apply()` which differ only in commit-vs-rollback. Never
+  hand-write per-dialect SQL for the write path; override a dialect only
+  where its semantics genuinely differ (Databricks has no multi-statement
+  transactions, so it cannot honour the rollback). Apply is all-or-nothing,
+  asserts an update/delete touched exactly one row (otherwise the target
+  drifted), and re-checks APPROVED/FAILED itself.
 - **Validation rules are declarative data** (serializable pydantic models),
   never arbitrary code or `eval`.
 - **Optional drivers stay lazy-imported** — `import bizkit` must succeed with
@@ -218,8 +254,8 @@ pipeline lands):
   `uv run mypy .` (strict) all clean.
 - Design touched? The `record-decision` skill was run — spec, CLAUDE.md,
   agents, and skills are in sync (spec §14).
-- Frontend touched? `npm run build` green and the committed bundle in
-  `src/bizkit/api/static/` is fresh.
+- Frontend touched? `npm test` and `tsc -b` green, `npm run build` green,
+  and the committed bundle in `src/bizkit/api/static/` is fresh.
 - Runtime behavior touched? Verified end-to-end (run-stack smoke or
   /verify), not just unit-tested.
 

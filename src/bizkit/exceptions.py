@@ -23,7 +23,15 @@ class AccessDeniedError(BizkitError):
 
 
 class ValidationFailedError(BizkitError):
-    """A changeset failed validation and the requested action is blocked."""
+    """A changeset failed validation and the requested action is blocked.
+
+    Carries the structured report so delivery layers can render the issues
+    rather than only the summary message.
+    """
+
+    def __init__(self, message: str, report: object | None = None) -> None:
+        super().__init__(message)
+        self.report = report
 
 
 class ChangesetLimitError(BizkitError):

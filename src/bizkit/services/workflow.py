@@ -7,7 +7,8 @@ appends exactly one audit event in the same session/transaction (D10).
 The caller (unit of work) commits.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
 
@@ -26,15 +27,48 @@ from bizkit.domain.ports import (
     ChangesetRepository,
     DecisionRepository,
     TableRegistry,
+    TargetBackend,
 )
 from bizkit.domain.table import TableRef
+from bizkit.domain.validation import BaseRule, Severity, ValidationReport
 from bizkit.exceptions import (
     AccessDeniedError,
+    ApplyError,
     ApprovalError,
     ChangesetLimitError,
+    ValidationFailedError,
 )
+from bizkit.services.validation import RowsFor, ValidationService
 
 SYSTEM_EXPIRY_ACTOR: Final[str] = "system:expiry"
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """Outcome of an apply attempt.
+
+    A target-side failure is a *result*, not an exception: the changeset
+    moves to FAILED and that transition must be committed along with its
+    audit event, so the caller needs it back rather than an unwound
+    transaction. Pre-conditions that change nothing (no rights, wrong
+    state, lapsed deadline) still raise.
+
+    Attributes:
+        changeset: The changeset in its post-attempt state.
+        report: The pre-apply validation report when validation blocked the
+            attempt, else ``None``.
+        error: The target's complaint when the write itself failed, else
+            ``None``.
+    """
+
+    changeset: Changeset
+    report: ValidationReport | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Whether the changeset reached APPLIED."""
+        return self.changeset.state is ChangesetState.APPLIED
 
 
 def _utcnow() -> datetime:
@@ -53,6 +87,9 @@ class WorkflowService:
             (D21/D27/D37); ``None`` falls back to the config defaults.
         decisions: Optional review-decision repository; when provided,
             approve/reject also record a :class:`ReviewDecision`.
+        backend_for: Resolves a table to its target backend. Required for
+            :meth:`apply`, which otherwise has nothing to write to.
+        validation: Rule runner; a default instance is used when omitted.
     """
 
     def __init__(
@@ -63,6 +100,8 @@ class WorkflowService:
         config: WorkflowConfig | None = None,
         registry: TableRegistry | None = None,
         decisions: DecisionRepository | None = None,
+        backend_for: Callable[[TableRef], TargetBackend] | None = None,
+        validation: ValidationService | None = None,
     ) -> None:
         self._changesets = changesets
         self._audit = audit
@@ -70,6 +109,8 @@ class WorkflowService:
         self._config = config or WorkflowConfig()
         self._registry = registry
         self._decisions = decisions
+        self._backend_for = backend_for
+        self._validation = validation or ValidationService()
 
     # -- effective per-table policy (registry override, else defaults) ----
 
@@ -214,6 +255,17 @@ class WorkflowService:
             )
         self._authorize(actor, Action.SUBMIT, changeset.table)
         self._check_item_cap(changeset)
+        # Validation runs at submit AND again pre-apply (D12). This one keeps
+        # invalid work out of a checker's queue; the pre-apply run is what
+        # catches target drift between approval and apply.
+        report = self.validate(changeset)
+        if not report.ok:
+            blocking = [i for i in report.issues if i.severity is Severity.ERROR]
+            raise ValidationFailedError(
+                f"Changeset {changeset.id} failed validation with "
+                f"{len(blocking)} blocking issue(s): {blocking[0].message}",
+                report=report,
+            )
         changeset.revision += 1
         changeset.review_deadline = self._effective_review_deadline(changeset.table)
         return self._transition(
@@ -290,18 +342,125 @@ class WorkflowService:
             changeset, ChangesetState.WITHDRAWN, actor=actor, action="withdraw"
         )
 
-    def apply(self, changeset_id: str, actor: str) -> Changeset:
-        """Apply an approved changeset to its target.
+    def _rows_for(self) -> RowsFor | None:
+        """A lazy, per-table row fetch for cross-table rules.
+
+        Resolution happens inside the callback, so a rule set with no
+        cross-table rules never touches a target — and one that *does* may
+        reference a table in a different backend than the changeset's.
+        """
+        if self._backend_for is None:
+            return None
+        backend_for = self._backend_for
+
+        def rows_for(ref: TableRef, columns: Sequence[str]) -> list[dict[str, object]]:
+            return backend_for(ref).read_rows(ref, columns)
+
+        return rows_for
+
+    def _rules_for(self, table: TableRef) -> Sequence[BaseRule]:
+        table_config = self._registry.lookup(table) if self._registry else None
+        return table_config.rules if table_config is not None else ()
+
+    def validate(
+        self, changeset: Changeset, rows_for: RowsFor | None = None
+    ) -> ValidationReport:
+        """Run the table's rule set against a changeset (D12).
+
+        Args:
+            changeset: The changeset to validate.
+            rows_for: Row fetch for cross-table rules; defaults to the
+                service's own resolver. Without either, those rules report
+                rather than pass.
+
+        Returns:
+            The structured report.
+        """
+        return self._validation.validate(
+            changeset,
+            self._rules_for(changeset.table),
+            rows_for if rows_for is not None else self._rows_for(),
+        )
+
+    def apply(self, changeset_id: str, actor: str) -> ApplyResult:
+        """Apply an approved changeset to its target database.
+
+        The only workflow operation that reaches a target. In order: expiry
+        guard, `apply` authorization, revalidation against the *current*
+        target (D12 — approval may be hours old and the target may have
+        drifted), then the backend handoff. Success transitions to APPLIED;
+        a validation or target failure transitions to FAILED, from which the
+        maker can rework or the checker can retry (D20).
+
+        Args:
+            changeset_id: The changeset to apply.
+            actor: The principal applying it; needs `apply` rights, which
+                the default role mapping grants to checkers.
+
+        Returns:
+            An :class:`ApplyResult` carrying the post-attempt changeset and,
+            when the attempt failed, the reason.
 
         Raises:
-            NotImplementedError: Apply orchestration (pre-apply
-                revalidation + backend handoff) lands with the backend
-                implementation milestone.
+            AccessDeniedError: The actor lacks `apply` rights.
+            ChangesetStateError: The changeset is not in an applicable
+                state (including one just expired by the deadline guard).
+            ApplyError: No backend is configured to write to.
         """
-        raise NotImplementedError(
-            "Apply orchestration lands with the backend implementation "
-            "milestone (see SPECIFICATION.md §13)"
+        changeset = self._changesets.get(changeset_id)
+        changeset = self._expire_if_overdue(changeset)
+        self._authorize(actor, Action.APPLY, changeset.table)
+
+        # Fail before touching the target if the state forbids applying at
+        # all, so a doomed attempt never opens a target transaction.
+        if changeset.state not in (ChangesetState.APPROVED, ChangesetState.FAILED):
+            changeset.transition(ChangesetState.APPLIED)  # raises, by design
+
+        if self._backend_for is None:
+            raise ApplyError(
+                f"Cannot apply changeset {changeset.id}: no target backend is "
+                "configured for this service"
+            )
+        backend = self._backend_for(changeset.table)
+
+        report = self.validate(changeset)
+        if not report.ok:
+            blocking = [i for i in report.issues if i.severity.value == "error"]
+            detail = (
+                f"pre-apply validation failed with {len(blocking)} blocking "
+                f"issue(s): {blocking[0].message}"
+                if blocking
+                else "pre-apply validation failed"
+            )
+            failed = self._transition(
+                changeset,
+                ChangesetState.FAILED,
+                actor=actor,
+                action="apply_failed",
+                detail=detail,
+            )
+            return ApplyResult(changeset=failed, report=report)
+
+        try:
+            backend.apply(changeset)
+        except (ApplyError, ValidationFailedError) as exc:
+            failed = self._transition(
+                changeset,
+                ChangesetState.FAILED,
+                actor=actor,
+                action="apply_failed",
+                detail=str(exc),
+            )
+            return ApplyResult(changeset=failed, error=str(exc))
+
+        applied = self._transition(
+            changeset,
+            ChangesetState.APPLIED,
+            actor=actor,
+            action="apply",
+            detail=f"revision {changeset.revision}, {len(changeset.items)} item(s)",
         )
+        return ApplyResult(changeset=applied)
 
     def expire_overdue(self) -> list[Changeset]:
         """Sweep: expire every overdue changeset (D21).

@@ -50,8 +50,13 @@ async def test_tables_empty_without_workspace(client: httpx.AsyncClient) -> None
     assert response.json() == []
 
 
-async def test_unimplemented_endpoints_501(client: httpx.AsyncClient) -> None:
-    assert (await client.post("/api/v1/changesets/x/validate")).status_code == 501
+async def test_validate_missing_changeset_404(client: httpx.AsyncClient) -> None:
+    # /validate is implemented now; an unknown id is a 404 like its siblings.
+    assert (await client.post("/api/v1/changesets/x/validate")).status_code == 404
+
+
+async def test_apply_missing_changeset_404(client: httpx.AsyncClient) -> None:
+    assert (await client.post("/api/v1/changesets/x/apply")).status_code == 404
 
 
 async def test_import_missing_changeset_404(client: httpx.AsyncClient) -> None:

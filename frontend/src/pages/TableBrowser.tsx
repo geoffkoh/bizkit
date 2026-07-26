@@ -83,6 +83,13 @@ function rowKey(row: Row, pkCols: string[]): string {
   return JSON.stringify(pkCols.map((c) => row[c]));
 }
 
+/** Route for a `backend/schema/table` path, inverting the param decoding
+ * in `TableBrowser` (an absent schema travels as `-`). */
+function tableHref(tablePath: string): string {
+  const [backend, schema, table] = tablePath.split("/");
+  return `/t/${backend}/${schema === "" ? "-" : schema}/${table}`;
+}
+
 /** Numeric/ID columns align their figures with `tabular-nums` (§2.1). */
 function isNumericColumn(column: ColumnOut | undefined): boolean {
   if (!column) return false;
@@ -104,13 +111,21 @@ function cellText(value: unknown): string {
 }
 
 interface Basket {
+  /** The table these items belong to, as `backend/schema/table`.
+   *
+   * A changeset targets exactly one `TableRef` (SPECIFICATION.md §3.1), so the
+   * basket is scoped to one table. Carrying the path makes that explicit: items
+   * drafted on one table must never be filed against whichever table happens to
+   * be on screen when Review is pressed.
+   */
+  path: string;
   updates: Map<string, { key: Row; before: Row; values: Row }>;
   deletes: Map<string, Row>;
   inserts: Row[];
 }
 
-function emptyBasket(): Basket {
-  return { updates: new Map(), deletes: new Map(), inserts: [] };
+function emptyBasket(path: string): Basket {
+  return { path, updates: new Map(), deletes: new Map(), inserts: [] };
 }
 
 function basketSize(b: Basket): number {
@@ -549,6 +564,7 @@ export function TableBrowser() {
   const backend = params.backend!;
   const schema = params.schema === "-" ? null : (params.schema ?? null);
   const tableName = params.table!;
+  const path = `${backend}/${schema ?? ""}/${tableName}`;
   const user = currentUser();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -558,7 +574,7 @@ export function TableBrowser() {
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const deferredSearch = useDeferredValue(search);
-  const [basket, setBasket] = useState<Basket>(emptyBasket);
+  const [basket, setBasket] = useState<Basket>(() => emptyBasket(path));
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -569,7 +585,6 @@ export function TableBrowser() {
     queryKey: ["tables", user],
     queryFn: api.listTables,
   });
-  const path = `${backend}/${schema ?? ""}/${tableName}`;
   const tableConfig = tables?.find((t) => t.path === path);
   const canView = tableConfig?.actions.view ?? true;
 
@@ -616,6 +631,29 @@ export function TableBrowser() {
     queryKey: ["changesets"],
     queryFn: api.listChangesets,
   });
+
+  // React Router reuses this component when only the :table param changes, so
+  // every piece of per-table state below has to be retargeted by hand.
+  //
+  // An empty basket just adopts the new table. A non-empty one cannot be moved
+  // (its items are rows of the *old* table), so it is left alone here and §4.1's
+  // keep-draft/discard prompt takes over — see `staleBasket`.
+  useEffect(() => {
+    if (basket.path !== path && basketSize(basket) === 0) {
+      setBasket(emptyBasket(path));
+    }
+  }, [basket, path]);
+
+  // Sort/search/paging/edit state is per-table too: a sort column or row key
+  // from the previous table is meaningless against this one.
+  useEffect(() => {
+    setSearch("");
+    setSorting([]);
+    setServerPage(1);
+    setEditingKey(null);
+    setAdding(false);
+    setConfirmDiscard(false);
+  }, [path]);
 
   const pkCols = useMemo(
     () => (columns ?? []).filter((c) => c.primary_key).map((c) => c.name),
@@ -717,6 +755,9 @@ export function TableBrowser() {
   };
 
   const count = basketSize(basket);
+  // A draft left behind on another table: the basket bar and review step stay
+  // hidden while this holds, so items can never be filed against `path`.
+  const staleBasket = count > 0 && basket.path !== path;
   const totalRows = probe?.total ?? 0;
   const filteredCount = serverMode
     ? (serverRows?.total ?? totalRows)
@@ -741,10 +782,10 @@ export function TableBrowser() {
     showToast(
       `Draft discarded — ${count} unsaved change${
         count === 1 ? "" : "s"
-      } on ${path}`,
+      } on ${basket.path}`,
       "info",
     );
-    setBasket(emptyBasket());
+    setBasket(emptyBasket(path));
     setEditingKey(null);
     setAdding(false);
     setConfirmDiscard(false);
@@ -1207,7 +1248,7 @@ export function TableBrowser() {
         </>
       )}
 
-      {count > 0 && (
+      {count > 0 && !staleBasket && (
         <div className="basket-bar">
           <span>
             Draft: {count} change{count === 1 ? "" : "s"} (
@@ -1241,6 +1282,34 @@ export function TableBrowser() {
         </div>
       )}
 
+      {/* Switching tables with unsaved edits prompts (UI_SPECIFICATION.md
+          §4.1). Deliberately not dismissable by clicking the scrim: the draft
+          either comes with you or is discarded on the record. */}
+      {staleBasket && (
+        <div className="slideover-backdrop">
+          <div className="slideover" onClick={(e) => e.stopPropagation()}>
+            <h2>Unsaved draft on another table</h2>
+            <p>
+              You have {count} unsaved change{count === 1 ? "" : "s"} on{" "}
+              <code>{basket.path}</code>. A changeset covers a single table, so
+              they cannot move to <code>{path}</code>.
+            </p>
+            <p className="actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void navigate(tableHref(basket.path))}
+              >
+                Keep draft — back to {basket.path}
+              </button>
+              <button type="button" className="danger" onClick={discard}>
+                Discard {count} change{count === 1 ? "" : "s"}
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
+
       {importing && tableConfig && (
         <ImportDialog
           table={tableConfig}
@@ -1253,13 +1322,13 @@ export function TableBrowser() {
         />
       )}
 
-      {reviewing && tableConfig && (
+      {reviewing && tableConfig && !staleBasket && (
         <ReviewSlideOver
           table={tableConfig}
           basket={basket}
           onClose={() => setReviewing(false)}
           onDone={(id) => {
-            setBasket(emptyBasket());
+            setBasket(emptyBasket(path));
             setReviewing(false);
             void queryClient.invalidateQueries();
             void navigate(`/changesets/${id}`);

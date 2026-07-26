@@ -18,6 +18,7 @@ failure stops the release.
   at minimum); no unreconciled divergences.
 - Quality gates: `uv run pytest`, `uv run ruff check .`,
   `uv run ruff format --check .`, `uv run mypy .` — all clean.
+- Frontend gates: `cd frontend && npx tsc -b && npm test` (vitest) — clean.
 - `uv run bizkit config schema` succeeds (workspace schema generable).
 
 ## 2. Version and changelog

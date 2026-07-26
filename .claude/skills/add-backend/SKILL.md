@@ -19,7 +19,14 @@ Work through this checklist in order. Prefer delegating the implementation to th
 
 - Create `src/bizkit/backends/<backend-name>.py` subclassing `BaseBackend`.
 - The driver import must be lazy (inside a function/`__init__`), raising `BackendNotInstalledError` with the exact hint: `pip install 'bizkit[<backend-name>]'`.
-- Implement/override: connection URL construction, `introspect_table()`, `dry_run()`, `apply()`.
+- Implement: connection URL construction, `introspect_table()`, `read_rows()`.
+- **Do NOT reimplement `dry_run()`/`apply()`** — `BaseBackend` provides one
+  generic SQLAlchemy Core implementation for every dialect (spec D44), and
+  the two share a code path differing only in commit-vs-rollback. Override
+  only where the dialect's semantics genuinely differ, and document why in
+  the module docstring. The known case is an engine without multi-statement
+  transactions (Databricks), which cannot honour the rollback and needs its
+  own `dry_run`.
 - Document the dialect's quirks in the module docstring: transaction model (transactional DDL? implicit commits?), constraint enforcement, identifier quoting and case folding, NULL/empty-string handling, upsert/MERGE syntax.
 
 ## 3. Registration & type map

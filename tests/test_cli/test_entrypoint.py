@@ -94,6 +94,49 @@ def test_config_validate_rejects_literal_secrets(
 
 
 def test_stub_commands_fail_clearly(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["apply"])
+    # `apply` and `validate` are implemented now; these remain stubs.
+    for name in ("show", "submit", "review", "comment"):
+        result = runner.invoke(cli, [name])
+        assert result.exit_code != 0
+        assert "not implemented" in result.output.lower()
+
+
+def test_missing_config_path_is_an_error_not_a_silent_fallback(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    # Silently ignoring an explicit --config degrades to "no grants, no
+    # targets", which surfaces much later as a confusing AccessDenied.
+    result = runner.invoke(cli, ["--config", str(tmp_path / "nope.json"), "list"])
     assert result.exit_code != 0
-    assert "not implemented" in result.output.lower()
+    assert "nope.json" in result.output
+    assert "does not exist" in result.output.lower()
+
+
+def test_init_store_may_point_config_at_a_file_it_will_create(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `init-store --seed-sample` writes the workspace file at --config's path,
+    # so for this one command a not-yet-existing path is legitimate.
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "fresh.workspace.json"
+    result = runner.invoke(
+        cli, ["--config", str(target), "init-store", "--seed-sample"]
+    )
+    assert result.exit_code == 0, result.output
+    assert target.exists()
+    # And it is usable immediately afterwards.
+    listing = runner.invoke(cli, ["--config", str(target), "list"])
+    assert listing.exit_code == 0, listing.output
+
+
+def test_existing_config_still_loads(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workspace = tmp_path / "ws.json"
+    workspace.write_text(
+        json.dumps({"version": 1, "store_url": f"sqlite:///{tmp_path}/s.db"}),
+        encoding="utf-8",
+    )
+    result = runner.invoke(cli, ["--config", str(workspace), "list"])
+    assert result.exit_code == 0, result.output

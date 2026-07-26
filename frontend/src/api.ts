@@ -6,6 +6,7 @@
 // affordances only — enforcement always happens server-side (D25).
 
 import type {
+  ApplyResultOut,
   AuditEventOut,
   ChangesetDetailOut,
   ChangesetOut,
@@ -18,6 +19,7 @@ import type {
   ReadyOut,
   RowsOut,
   TableOut,
+  ValidationReportOut,
 } from "./types";
 
 export function tableUrlPart(backend: string, schema: string | null): string {
@@ -126,6 +128,16 @@ export const api = {
     }),
   withdraw: (id: string) =>
     request<ChangesetDetailOut>(`/api/v1/changesets/${id}/withdraw`, {
+      method: "POST",
+    }),
+  /** Apply an approved changeset to its target (spec §5). */
+  apply: (id: string) =>
+    request<ApplyResultOut>(`/api/v1/changesets/${id}/apply`, {
+      method: "POST",
+    }),
+  /** Run the rule set without transitioning anything (D12). */
+  validate: (id: string) =>
+    request<ValidationReportOut>(`/api/v1/changesets/${id}/validate`, {
       method: "POST",
     }),
   importCsv: async (

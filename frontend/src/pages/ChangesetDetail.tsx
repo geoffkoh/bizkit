@@ -9,6 +9,7 @@ import { showToast } from "../components/Toast";
 import { describeError } from "../errors";
 import { tableRouteFromPath } from "../routes";
 import type {
+  ApplyResultOut,
   ChangesetDetailOut,
   CommentOut,
   TableActionsOut,
@@ -80,10 +81,15 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element 
   // Affordance only (D25): closed until the server says otherwise, and a 403
   // is still handled if affordance and enforcement disagree.
   const canReview = tableActions?.approve ?? false;
+  // `apply` is its own action (checker role by default), so it gets its own
+  // affordance rather than riding on `approve`.
+  const canApply = tableActions?.apply ?? false;
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [confirmApply, setConfirmApply] = useState(false);
+  const [applyOutcome, setApplyOutcome] = useState<ApplyResultOut | null>(null);
 
   const act = useMutation({
     mutationFn: (action: WorkflowAction) =>
@@ -107,6 +113,36 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element 
   const isMaker = user === changeset.maker;
   const state = changeset.state;
   const label = `“${changeset.title}”`;
+
+  // Apply returns a result rather than throwing when the *target* refuses, so
+  // it needs its own mutation: `ok: false` is a 200 carrying the reason and a
+  // changeset that is now FAILED.
+  const applyAct = useMutation({
+    mutationFn: () => api.apply(changeset.id),
+    onSuccess: (result) => {
+      setConfirmApply(false);
+      setActionError(null);
+      setApplyOutcome(result.ok ? null : result);
+      if (result.ok) {
+        showToast(`Applied ${label} to ${changeset.table}`, "success");
+      } else {
+        const blocking = result.report?.issues.length ?? 0;
+        showToast(
+          `Apply failed — ${
+            result.error ?? `${blocking} validation issue(s)`
+          }`,
+          "error",
+        );
+      }
+      void queryClient.invalidateQueries();
+    },
+    onError: (error) => {
+      const message = describeError(error);
+      setActionError(message);
+      showToast(message, "error");
+    },
+  });
+
   const buttons: ReactNode[] = [];
 
   if (state === "draft" && isMaker) {
@@ -199,6 +235,42 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element 
       </button>,
     );
   }
+  if ((state === "approved" || state === "failed") && canApply) {
+    // Writing to a real target is the one irreversible step in the workflow,
+    // so it takes two clicks and the confirmation names the table.
+    const isRetry = state === "failed";
+    buttons.push(
+      confirmApply ? (
+        <span className="confirm" key="apply">
+          <span className="muted">
+            {isRetry ? "Retry apply to" : "Apply to"} <code>{changeset.table}</code>?
+            This writes to the target database.
+          </span>
+          <button
+            type="button"
+            className="primary"
+            disabled={applyAct.isPending}
+            onClick={() => applyAct.mutate()}
+          >
+            {applyAct.isPending ? "Applying…" : "Yes, apply"}
+          </button>
+          <button type="button" onClick={() => setConfirmApply(false)}>
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <button
+          key="apply"
+          type="button"
+          className="primary"
+          disabled={applyAct.isPending}
+          onClick={() => setConfirmApply(true)}
+        >
+          {isRetry ? "Retry apply" : "Apply to target"}
+        </button>
+      ),
+    );
+  }
   if (
     (state === "rejected" || state === "failed" || state === "expired") &&
     isMaker
@@ -249,6 +321,30 @@ function Actions({ changeset }: { changeset: ChangesetDetailOut }): JSX.Element 
         </p>
       )}
       {actionError && <p className="error">{actionError}</p>}
+      {applyOutcome && !applyOutcome.ok && (
+        <div className="panel">
+          <p className="error">
+            Apply failed — the changeset is now{" "}
+            <strong>{applyOutcome.changeset.state}</strong> and nothing was
+            written to <code>{changeset.table}</code> (all-or-nothing).
+          </p>
+          {applyOutcome.error && (
+            <p className="error">Target said: {applyOutcome.error}</p>
+          )}
+          {applyOutcome.report?.issues.map((issue, index) => (
+            <p className="muted" key={`${issue.rule_id}-${index}`}>
+              {issue.severity}: {issue.rule_id}
+              {issue.column ? ` [${issue.column}]` : ""} — {issue.message}
+            </p>
+          ))}
+          <p className="muted">
+            Validation runs again immediately before apply, so this can differ
+            from the report at submit — the target may have changed since
+            approval. The maker can rework it, or a checker can retry once the
+            cause is cleared.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
