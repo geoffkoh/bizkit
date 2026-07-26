@@ -418,7 +418,14 @@ sort/filter/pagination model and manual mode):
   - All edits accumulate in the **draft basket** — a docked bottom bar:
     "Draft: 3 changes (2 update · 1 insert) — Review & submit /
     Discard". Basket persists across pagination within the table;
-    switching tables prompts (keep draft / discard).
+    switching tables prompts (keep draft / discard). "Keep draft"
+    navigates back to the basket's own table: a changeset targets a
+    single `TableRef` (SPECIFICATION.md §3.1), so the items cannot
+    follow you to another one. Until that prompt is resolved the basket
+    bar and the review step are both hidden, which is what makes it
+    structurally impossible to file items against the table currently on
+    screen. Sort, search, paging, and in-progress row edits are likewise
+    per-table and reset on switch.
 - **Basket review step** (slide-over panel): the accumulated items as a
   before→after diff (updates show old value → new value from the loaded
   rows), title + description fields, then **Save draft** or **Save &
