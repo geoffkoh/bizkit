@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from bizkit.api.schemas import (
+    ApplyResultOut,
     AuditEventOut,
     ChangesetDetailOut,
     ChangesetOut,
@@ -38,6 +39,7 @@ from bizkit.api.schemas import (
     ReviewIn,
     RowsOut,
     TableOut,
+    ValidationReportOut,
 )
 from bizkit.backends.base import BaseBackend
 from bizkit.backends.registry import get_backend_class
@@ -156,6 +158,10 @@ def create_app(
                 config=effective.workflow,
                 registry=registry,
                 decisions=decisions,
+                # Late-bound: `_backend_for_ref` is defined below and only
+                # called per-request. Apply and cross-table validation both
+                # need it.
+                backend_for=lambda ref: _backend_for_ref(ref),
             )
             comments = CommentService(
                 comments=comment_repo,
@@ -464,6 +470,31 @@ def create_app(
         """Withdraw a draft/submitted changeset (maker only)."""
         return _transition_route(changeset_id, user, "withdraw")
 
+    @app.post(
+        "/api/v1/changesets/{changeset_id}/apply",
+        response_model=ApplyResultOut,
+    )
+    async def apply_changeset(
+        changeset_id: str, user: str = Depends(_identity)
+    ) -> ApplyResultOut:
+        """Apply an approved changeset to its target database (spec §5).
+
+        The only route that reaches a target, and it only ever delegates to
+        `WorkflowService.apply` — which revalidates first (D12) and hands the
+        write to `BaseBackend.apply`. Runs in a threadpool because the store
+        and target tiers are both sync.
+        """
+
+        def _run() -> ApplyResultOut:
+            with unit_of_work() as uow:
+                result = uow.workflow.apply(changeset_id, user)
+                # Commit either way: a FAILED transition and its audit event
+                # are as much a part of the record as a successful apply.
+                uow.session.commit()
+                return ApplyResultOut.from_domain(result)
+
+        return await run_in_threadpool(_run)
+
     # -- comments, decisions, audit ---------------------------------------
 
     @app.get(
@@ -521,13 +552,30 @@ def create_app(
 
     # -- later milestones --------------------------------------------------
 
-    @app.post("/api/v1/changesets/{changeset_id}/validate")
-    def validate_changeset(changeset_id: str) -> None:
-        """Placeholder: lands with the validation milestone."""
-        raise HTTPException(
-            status_code=501,
-            detail="Not implemented yet — see SPECIFICATION.md §13",
-        )
+    @app.post(
+        "/api/v1/changesets/{changeset_id}/validate",
+        response_model=ValidationReportOut,
+    )
+    async def validate_changeset(
+        changeset_id: str, user: str = Depends(_identity)
+    ) -> ValidationReportOut:
+        """Run the table's rule set without transitioning anything (D12).
+
+        Lets a maker see the report before submitting. Read-only: cross-table
+        rules read the target, nothing writes.
+        """
+
+        def _run() -> ValidationReportOut:
+            with unit_of_work() as uow:
+                changeset = uow.changesets.get(changeset_id)
+                if not access_policy.is_allowed(user, Action.VIEW, changeset.table):
+                    raise AccessDeniedError(
+                        f"User {user!r} lacks 'view' rights on "
+                        f"{changeset.table.qualified_name()}"
+                    )
+                return ValidationReportOut.from_domain(uow.workflow.validate(changeset))
+
+        return await run_in_threadpool(_run)
 
     @app.post(
         "/api/v1/changesets/{changeset_id}/items/import",

@@ -33,10 +33,14 @@ You own these modules (and their tests):
 
 1. Never write to a target database outside `BaseBackend.apply()` / `dry_run()`. `dry_run()` must leave the target unchanged (transactional rollback where supported, client-side simulation where not).
 2. `apply()` executes an approved changeset in one transaction where the dialect supports it; where it cannot (Databricks), it must verify and report partial application via `ApplyError`.
-3. Lazy-import discipline: `import bizkit` and the core test suite must pass with zero optional drivers installed. A missing driver raises `BackendNotInstalledError` naming the exact `pip install 'bizkit[<extra>]'`.
-4. Every type mapping is bidirectional and covered in `typemap` tests for all seven backends, not just the one you're touching.
-5. Dialect quirks are documented in the adapter's module docstring at the moment you discover them.
-6. Everything here is sync SQLAlchemy 2.0 — the Snowflake/Databricks dialects are sync-only; do not introduce the async engine.
+3. **The write path is already implemented once, generically (D44)** — `BaseBackend._reflect/_check_columns/_execute_item/_run` on SQLAlchemy Core against the reflected table, with `dry_run`/`apply` differing only in commit-vs-rollback. Do NOT add per-dialect DML; SQLAlchemy compiles per dialect and binds parameters. Override in an adapter only where semantics genuinely differ, and say why in the module docstring.
+4. Inherited invariants you must not weaken: all-or-nothing in one transaction; an update/delete matching 0 or >1 rows is drift and raises; unknown columns are refused before execution; the changeset's state is re-checked (APPROVED, or FAILED being retried per D20).
+5. Known override obligations: **Databricks** has no multi-statement transactions, so it cannot honour `dry_run`'s rollback and must override it; **Snowflake** declares but does not enforce constraints, so a clean rehearsal proves less there than on Postgres.
+6. `introspect_table`/`read_rows` are implemented only for the `sqlite` demo backend so far. Until a dialect implements them, its inherited write path is untested against a real engine — say so rather than implying coverage.
+7. Lazy-import discipline: `import bizkit` and the core test suite must pass with zero optional drivers installed. A missing driver raises `BackendNotInstalledError` naming the exact `pip install 'bizkit[<extra>]'`.
+8. Every type mapping is bidirectional and covered in `typemap` tests for all seven backends, not just the one you're touching.
+9. Dialect quirks are documented in the adapter's module docstring at the moment you discover them.
+10. Everything here is sync SQLAlchemy 2.0 — the Snowflake/Databricks dialects are sync-only; do not introduce the async engine.
 
 ## Boundary with validation-engineer
 

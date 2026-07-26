@@ -94,6 +94,8 @@ def test_config_validate_rejects_literal_secrets(
 
 
 def test_stub_commands_fail_clearly(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["apply"])
-    assert result.exit_code != 0
-    assert "not implemented" in result.output.lower()
+    # `apply` and `validate` are implemented now; these remain stubs.
+    for name in ("show", "submit", "review", "comment"):
+        result = runner.invoke(cli, [name])
+        assert result.exit_code != 0
+        assert "not implemented" in result.output.lower()

@@ -51,6 +51,21 @@ bizkit list                        # list changesets
 bizkit serve                       # REST API + web UI on :8091
 ```
 
+Applying an approved changeset — validation runs again first, because the
+target may have changed since approval:
+
+```bash
+CFG=bizkit.workspace.json
+bizkit --config $CFG validate <changeset-id>              # report only
+bizkit --config $CFG apply <changeset-id> --actor bob --dry-run
+bizkit --config $CFG apply <changeset-id> --actor bob
+```
+
+A dry run executes every change against the target and rolls back, so the
+target's own constraints are exercised without changing anything. Applying
+is a *checker* right, and it is the only operation in bizkit that writes to
+a target database.
+
 ## Interfaces
 
 - **Python library** — `import bizkit`
@@ -66,6 +81,10 @@ uv run pytest            # fast suite (no databases needed)
 uv run ruff check .      # lint
 uv run ruff format .     # format
 uv run mypy .            # type check (strict)
+
+cd frontend && npm install
+npm test                 # vitest + React Testing Library
+npm run build            # refresh the committed SPA bundle
 ```
 
 Integration tests against real databases are marked and skipped by default —

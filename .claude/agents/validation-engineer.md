@@ -23,6 +23,11 @@ You own these modules (and their tests):
 4. Cross-table checks read target databases strictly read-only, and only through the `TargetBackend` port — never a raw connection.
 5. A `ValidationReport` with any error-severity issue blocks the transition (submit or apply); warnings do not.
 6. Rule sets are versioned data attached to a table's configuration, not code baked into services.
+7. `BaseRule.evaluate(item, context)` takes a `RuleContext(table, rows_for)` (D44). `rows_for` resolves the backend **lazily, per referenced table** — so a rule set with no cross-table rules never opens a target connection, and a `CrossTableRule` may reference a table in a different backend.
+8. Two conventions bind every kind: a DELETE carries no values, so value-shaped rules skip it; and a column absent from an UPDATE is **unchanged, not null** — absence is only meaningful on INSERT. Getting this wrong makes partial updates unsubmittable.
+9. `CrossFieldRule.predicate` resolves against the closed registry in `src/bizkit/domain/predicates.py`. Adding a predicate is a reviewed code change; an unregistered id must surface as a validation *issue*, never an exception or a silent pass.
+10. Fail closed: a `CrossTableRule` with no `rows_for` reports rather than passes — failing open would let an unvalidated row reach apply.
+11. Validation is wired into submit (raises `ValidationFailedError` carrying the report, no transition) and pre-apply (a blocking report moves the changeset to FAILED via `ApplyResult`, not an exception).
 
 ## Boundary with db-dialect-specialist
 
@@ -40,4 +45,6 @@ You own dry-run *rule semantics* — which rules run, how issues are produced, w
 - Rule classes with `Callable` fields or code strings.
 - Validation logic inlined in API routes or the CLI.
 - Skipping pre-apply revalidation "because it already passed at submit".
+- Adding a rule kind without extending `src/bizkit/domain/predicates.py`'s registry or the per-kind semantics tests in `tests/test_domain/test_validation.py`.
+- Writing a fixture that submits a deliberately invalid changeset — since D44 that raises, so an invalid changeset can never reach a checker. A REJECTED example must be a valid change declined on business grounds.
 - Issues raised as bare exceptions instead of collected into a report.

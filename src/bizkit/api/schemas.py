@@ -12,6 +12,8 @@ from bizkit.domain.comment import Comment
 from bizkit.domain.ports import AccessPolicy
 from bizkit.domain.table import TableRef
 from bizkit.domain.table_config import TableConfig
+from bizkit.domain.validation import ValidationIssue, ValidationReport
+from bizkit.services.workflow import ApplyResult
 
 
 class HealthOut(BaseModel):
@@ -133,6 +135,7 @@ class TableActionsOut(BaseModel):
     submit: bool
     approve: bool
     reject: bool
+    apply: bool
     comment: bool
     view: bool
 
@@ -192,6 +195,7 @@ class TableOut(BaseModel):
                 submit=policy.is_allowed(actor, Action.SUBMIT, ref),
                 approve=policy.is_allowed(actor, Action.APPROVE, ref),
                 reject=policy.is_allowed(actor, Action.REJECT, ref),
+                apply=policy.is_allowed(actor, Action.APPLY, ref),
                 comment=policy.is_allowed(actor, Action.COMMENT, ref),
                 view=policy.is_allowed(actor, Action.VIEW, ref),
             ),
@@ -309,6 +313,74 @@ class ImportReportOut(BaseModel):
     ok: bool
     items_added: int
     issues: list[ImportIssueOut]
+
+
+class ValidationIssueOut(BaseModel):
+    """One structured validation finding (D12)."""
+
+    rule_id: str
+    table: str
+    row_key: dict[str, object] | None
+    column: str | None
+    severity: str
+    message: str
+
+    @classmethod
+    def from_domain(cls, issue: ValidationIssue) -> "ValidationIssueOut":
+        """Project a domain validation issue."""
+        return cls(
+            rule_id=issue.rule_id,
+            table=issue.table,
+            row_key=issue.row_key,
+            column=issue.column,
+            severity=issue.severity.value,
+            message=issue.message,
+        )
+
+
+class ValidationReportOut(BaseModel):
+    """A validation run's findings; `ok` is false only for errors."""
+
+    ok: bool
+    issues: list[ValidationIssueOut]
+
+    @classmethod
+    def from_domain(cls, report: ValidationReport) -> "ValidationReportOut":
+        """Project a domain validation report."""
+        return cls(
+            ok=report.ok,
+            issues=[ValidationIssueOut.from_domain(i) for i in report.issues],
+        )
+
+
+class ApplyResultOut(BaseModel):
+    """Outcome of an apply attempt (spec §5).
+
+    A target-side failure is reported as a 200 with `ok: false` and the
+    changeset in FAILED, not as an HTTP error: the transition happened and
+    is part of the audit trail, so the client needs the new state plus the
+    reason. Refusals that change nothing (no rights, wrong state) remain
+    403/409.
+    """
+
+    ok: bool
+    changeset: ChangesetDetailOut
+    report: ValidationReportOut | None = None
+    error: str | None = None
+
+    @classmethod
+    def from_domain(cls, result: ApplyResult) -> "ApplyResultOut":
+        """Project a service-layer apply result."""
+        return cls(
+            ok=result.ok,
+            changeset=ChangesetDetailOut.from_domain(result.changeset),
+            report=(
+                ValidationReportOut.from_domain(result.report)
+                if result.report is not None
+                else None
+            ),
+            error=result.error,
+        )
 
 
 class AuditEventOut(BaseModel):

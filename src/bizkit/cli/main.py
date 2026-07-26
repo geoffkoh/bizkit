@@ -8,16 +8,23 @@ Commands for later milestones are present as explicit stubs.
 import json
 import os
 import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import click
 import uvicorn
 
+from sqlalchemy.orm import Session
+
+from bizkit.backends.base import BaseBackend
+from bizkit.backends.registry import get_backend_class
 from bizkit.config import BizkitConfig, load_config
 from bizkit.domain.access import Grant
 from bizkit.domain.changeset import ChangeItem, ChangeOp
 from bizkit.domain.table import TableRef
+from bizkit.domain.validation import ValidationReport
 from bizkit.exceptions import BizkitError
 from bizkit.services.comments import CommentService
 from bizkit.services.workflow import WorkflowService
@@ -118,18 +125,18 @@ def _seed_sample(obj: CLIContext, engine_url: str) -> None:
             "(pair TEXT PRIMARY KEY, rate REAL NOT NULL, "
             "source TEXT NOT NULL DEFAULT 'vendor')"
         )
+        # Deliberately omits the pairs the seeded changesets insert (USDJPY,
+        # USDSGD, USDCAD, EURGBP): a pending insert has to be for a row that
+        # does not exist yet, or applying it trips the primary key. Updates
+        # below (GBPUSD) do need their row present.
         conn.executemany(
             "INSERT OR REPLACE INTO fx_rates (pair, rate, source) VALUES (?, ?, ?)",
             [
                 ("EURUSD", 1.09, "vendor"),
                 ("GBPUSD", 1.27, "vendor"),
-                ("USDSGD", 1.34, "vendor"),
                 ("AUDUSD", 0.66, "vendor"),
                 ("USDCHF", 0.88, "desk"),
-                ("USDJPY", 155.2, "vendor"),
-                ("EURGBP", 0.85, "desk"),
                 ("NZDUSD", 0.61, "vendor"),
-                ("USDCAD", 1.36, "vendor"),
                 ("EURCHF", 0.96, "desk"),
                 ("USDHKD", 7.81, "vendor"),
                 ("USDCNH", 7.24, "vendor"),
@@ -427,16 +434,22 @@ def _seed_sample(obj: CLIContext, engine_url: str) -> None:
         service.submit(approved.id, "alice")
         service.approve(approved.id, "bob", reason="Matches vendor feed")
 
-        # REJECTED
+        # REJECTED — a *valid* change the checker declines on business
+        # grounds. Since validation runs at submit (D12), an invalid
+        # changeset (say a negative rate) never reaches a checker at all:
+        # rejection is human judgement, not a stand-in for validation.
         rejected = service.create(
             fx,
             maker="carol",
-            title="Add negative test rate",
-            items=[_insert("XXXYYY", -1.0)],
+            title="Add CAD rate",
+            description="Requested by the Toronto desk.",
+            items=[_insert("USDCAD", 1.36)],
         )
         service.submit(rejected.id, "carol")
         service.reject(
-            rejected.id, "bob", reason="Rate is negative; violates rate-positive"
+            rejected.id,
+            "bob",
+            reason="CAD coverage is not signed off for this quarter yet",
         )
 
         # WITHDRAWN
@@ -595,6 +608,130 @@ def expire(obj: CLIContext) -> None:
     click.echo(f"Expired {len(expired)} changeset(s)")
 
 
+def _backend_resolver(obj: CLIContext) -> Callable[[TableRef], BaseBackend]:
+    """Resolve a table to its configured target backend."""
+    targets = obj.config.targets
+
+    def backend_for(ref: TableRef) -> BaseBackend:
+        target = targets.get(ref.backend)
+        if target is None:
+            raise click.ClickException(
+                f"No target profile {ref.backend!r} in configuration — "
+                "apply needs a target to write to"
+            )
+        return get_backend_class(target.backend)(target.url)
+
+    return backend_for
+
+
+def _workflow_service(obj: CLIContext, session: Session) -> WorkflowService:
+    """Build a fully-wired WorkflowService over an open session."""
+    registry = FileTableRegistry(obj.workspace.tables) if obj.workspace else None
+    grants: list[Grant] = obj.workspace.grants if obj.workspace else []
+    backend_for = _backend_resolver(obj)
+
+    return WorkflowService(
+        changesets=SqlAlchemyChangesetRepository(session),
+        audit=SqlAlchemyAuditLog(session),
+        access=FileAccessPolicy(grants),
+        config=obj.config.workflow,
+        registry=registry,
+        decisions=SqlAlchemyDecisionRepository(session),
+        backend_for=backend_for,
+    )
+
+
+def _echo_issues(report: ValidationReport) -> None:
+    for issue in report.issues:
+        location = f" [{issue.column}]" if issue.column else ""
+        key = f" key={issue.row_key}" if issue.row_key else ""
+        click.echo(
+            f"  {issue.severity.value}: {issue.rule_id}{location}{key} — "
+            f"{issue.message}"
+        )
+
+
+@contextmanager
+def _domain_errors() -> Iterator[None]:
+    """Surface domain errors as clean CLI messages, not tracebacks."""
+    try:
+        yield
+    except BizkitError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command()
+@click.argument("changeset_id")
+@click.option("--actor", required=True, help="Principal applying the changeset.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Rehearse against the target and roll back; changes no state.",
+)
+@click.pass_obj
+def apply(obj: CLIContext, changeset_id: str, actor: str, dry_run: bool) -> None:
+    """Apply an APPROVED changeset to its target database (spec §5).
+
+    Revalidates first (D12) because the target may have drifted since
+    approval, then hands the write to the backend. On failure the changeset
+    lands in FAILED and can be reworked or retried.
+    """
+    engine = create_store_engine(obj.config.store_url)
+    create_schema(engine)
+    factory = create_session_factory(engine)
+    with factory() as session, _domain_errors():
+        service = _workflow_service(obj, session)
+        if dry_run:
+            changeset = SqlAlchemyChangesetRepository(session).get(changeset_id)
+            report = service.validate(changeset)
+            if not report.ok:
+                click.echo("Validation failed:")
+                _echo_issues(report)
+                raise SystemExit(1)
+            _backend_resolver(obj)(changeset.table).dry_run(changeset)
+            click.echo(
+                f"Dry run OK — {len(changeset.items)} item(s) rehearsed against "
+                f"{changeset.table.qualified_name()}, target unchanged"
+            )
+            return
+
+        result = service.apply(changeset_id, actor)
+        session.commit()
+
+    if result.ok:
+        click.echo(
+            f"Applied {changeset_id} to {result.changeset.table.qualified_name()} "
+            f"({len(result.changeset.items)} item(s))"
+        )
+        return
+    click.echo(f"Apply failed — changeset is now {result.changeset.state.value}")
+    if result.report is not None:
+        _echo_issues(result.report)
+    if result.error:
+        click.echo(f"  target: {result.error}")
+    raise SystemExit(1)
+
+
+@cli.command()
+@click.argument("changeset_id")
+@click.pass_obj
+def validate(obj: CLIContext, changeset_id: str) -> None:
+    """Run a changeset's rule set and report, changing nothing (D12)."""
+    engine = create_store_engine(obj.config.store_url)
+    create_schema(engine)
+    factory = create_session_factory(engine)
+    with factory() as session, _domain_errors():
+        service = _workflow_service(obj, session)
+        changeset = SqlAlchemyChangesetRepository(session).get(changeset_id)
+        report = service.validate(changeset)
+    if report.ok:
+        click.echo(f"OK — no blocking issues in {len(changeset.items)} item(s)")
+        return
+    click.echo(f"{len(report.issues)} issue(s):")
+    _echo_issues(report)
+    raise SystemExit(1)
+
+
 @cli.group("config")
 def config_group() -> None:
     """Workspace config tooling (spec D23)."""
@@ -651,7 +788,7 @@ def _not_implemented(name: str) -> click.Command:
     return _stub
 
 
-for _name in ("show", "submit", "review", "apply", "validate", "comment"):
+for _name in ("show", "submit", "review", "comment"):
     _not_implemented(_name)
 
 
