@@ -136,6 +136,11 @@ DRAFTs never expire.
   - `services/`: application layer. `WorkflowService` is the only place state
     transitions happen.
   - `api/` and `cli/`: thin delivery layers over services.
+  - `demo/`: dev-only demo seeding as named scenarios (spec D45) — a
+    **peer** of `api/`/`cli/`, never inside them, since it consumes
+    services. Scenarios seed only through `WorkflowService`, so demo
+    histories obey the same invariants as production. Never put fixture
+    data or DDL in `cli/`.
 - **Workflow store is sync SQLAlchemy** — the Snowflake/Databricks dialects
   are sync-only, so the whole persistence tier stays sync and FastAPI bridges
   via `fastapi.concurrency.run_in_threadpool`. Do not convert the store or
@@ -174,6 +179,9 @@ Drivers are optional and lazy-imported; a missing driver raises
   End users need no Node.)
 - **Apply a changeset:** `uv run bizkit --config <ws> apply <id> --actor
   <who> [--dry-run]`; `… validate <id>` for a report only.
+- **Seed a demo:** `uv run bizkit init-store --scenario enterprise`
+  (`--list-scenarios` to see them; `--seed-sample` aliases the default
+  `sample`). Scenarios live in `src/bizkit/demo/scenarios/`.
 
 ## Hard Constraints
 - **Target DBs are written only by `BaseBackend.apply()` on an APPROVED

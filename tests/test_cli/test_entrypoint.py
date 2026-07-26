@@ -140,3 +140,58 @@ def test_existing_config_still_loads(
     )
     result = runner.invoke(cli, ["--config", str(workspace), "list"])
     assert result.exit_code == 0, result.output
+
+
+def test_list_scenarios_names_both_and_marks_the_default(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["init-store", "--list-scenarios"])
+    assert result.exit_code == 0, result.output
+    assert "sample (default)" in result.output
+    assert "enterprise" in result.output
+
+
+def test_seed_sample_is_an_alias_for_the_default_scenario(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Back-compat: --seed-sample predates --scenario and must keep working.
+    monkeypatch.chdir(tmp_path)
+    store_url = f"sqlite:///{tmp_path}/store.db"
+    result = runner.invoke(
+        cli, ["--store-url", store_url, "init-store", "--seed-sample"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "'sample'" in result.output
+    assert Path("sample_target.db").exists()
+
+
+def test_scenario_enterprise_seeds_two_targets(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store_url = f"sqlite:///{tmp_path}/store.db"
+    result = runner.invoke(
+        cli, ["--store-url", store_url, "init-store", "--scenario", "enterprise"]
+    )
+    assert result.exit_code == 0, result.output
+    assert Path("risk_target.db").exists()
+    assert Path("crm_target.db").exists()
+    listing = runner.invoke(cli, ["--store-url", store_url, "list"])
+    assert "applied" in listing.output
+    assert "failed" in listing.output
+
+
+def test_an_unknown_scenario_is_rejected_with_the_choices(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["init-store", "--scenario", "nope"])
+    assert result.exit_code != 0
+    assert "enterprise" in result.output and "sample" in result.output
+
+
+def test_init_store_without_seeding_creates_no_workspace(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli, ["--store-url", f"sqlite:///{tmp_path}/store.db", "init-store"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not Path("bizkit.workspace.json").exists()
+    assert not Path("sample_target.db").exists()

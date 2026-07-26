@@ -19,11 +19,15 @@ uv sync
 # auth.provider: none with auth.allow_insecure_dev_mode: true (spec D42) —
 # required or create_app()/CLI refuse to start; never set that flag
 # outside a local/dev workspace file.
-uv run bizkit init-store --seed-sample
+uv run bizkit init-store --seed-sample        # the small default scenario
+# Or the richer one: two targets, cross-table (incl. cross-backend) rules,
+# a real APPLIED and FAILED, a rework at revision 2, narrow grants (D45).
+uv run bizkit init-store --scenario enterprise
+uv run bizkit init-store --list-scenarios    # what's available
 uv run bizkit --config bizkit.workspace.json list   # sanity check
 ```
 
-Files land in the current directory (`bizkit.workspace.json`, `bizkit.db`, `sample_target.db`) — run from a scratch directory or delete them afterwards; the `.db` files are gitignored.
+Files land in the current directory (`bizkit.workspace.json`, `bizkit.db`, and one `<profile>_target.db` per target — `sample_target.db`, or `risk_target.db` + `crm_target.db` for `enterprise`) — run from a scratch directory or delete them afterwards; the `.db` files are gitignored.
 
 ## 2. API server
 
