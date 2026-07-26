@@ -65,6 +65,7 @@ APPLIED, WITHDRAWN are terminal
 - Enforcing maker≠checker only in a FastAPI dependency.
 - Adding workflow shortcuts "for admin users" that bypass the transition table or the four-eyes rule.
 - Storing approval decisions as booleans instead of ReviewDecision records with actor + timestamp.
+- Seeding or fixturing changesets by writing rows straight into the store. Demo scenarios (`bizkit/demo`, spec D45) go through `WorkflowService` precisely so a seeded history cannot violate four-eyes, revision binding, or the one-audit-event rule.
 - Hard-coding role checks in services or API routes instead of calling the `AccessPolicy` port.
 - Adding password/credential fields anywhere — authentication is external, always. A bizkit-owned username/password store is rejected outright (spec D42); `ldap` mode binds and immediately discards credentials, it never persists them.
 - Shipping `auth.provider: none` reachable without `auth.allow_insecure_dev_mode: true` also set, or any code path that lets a production config fall back to trusting a client-supplied header.

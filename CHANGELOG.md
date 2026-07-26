@@ -30,6 +30,19 @@ Design decisions are referenced by their `SPECIFICATION.md` D-numbers.
   (`cd frontend && npm test`), covering the queue predicates, the draft
   basket's one-table scoping, and the Apply action.
 
+- **Demo seeding moved to `bizkit/demo/` as named scenarios (D45)**, out of
+  `cli/main.py` where it had grown to 430 of 808 lines. A `Scenario` splits
+  declarative parts (target DDL + rows, workspace config) from a scripted
+  changeset history, and every scenario seeds through `WorkflowService`, so
+  demo data obeys the production invariants. `bizkit init-store
+  --scenario NAME`, `--list-scenarios`; `--seed-sample` still works as the
+  default scenario's alias.
+- **New `enterprise` demo scenario** covering what `sample` structurally
+  cannot: two target profiles, cross-table rules including a cross-backend
+  one, a real APPLIED and a real FAILED, a reject→rework→revision-2→approve
+  cycle, narrowly scoped grants, and a deliberately invalid draft that
+  produces a blocking validation report when submitted.
+
 ### Fixed
 - The draft basket no longer leaks across tables. React Router reuses
   `TableBrowser` when only the `:table` param changes, so a basket left on a

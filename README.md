@@ -47,6 +47,7 @@ changeset is applied.
 pip install bizkit                 # or: uv sync (from a checkout)
 
 bizkit init-store --seed-sample    # create the workflow store + demo data
+bizkit init-store --list-scenarios # or pick a richer demo: --scenario enterprise
 bizkit list                        # list changesets
 bizkit serve                       # REST API + web UI on :8091
 ```
