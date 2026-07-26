@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type JSX, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { api, ApiError, currentUser } from "../api";
 import { Icon } from "../components/Icon";
 import { SkeletonLines, SkeletonTable } from "../components/Skeleton";

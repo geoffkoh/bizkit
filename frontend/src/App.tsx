@@ -10,7 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes } from "react-router";
 import { api, currentUser, setCurrentUser } from "./api";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBannerHost } from "./components/ErrorBanner";

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 import { api, currentUser } from "../api";
 import { approveRightsByPath, awaitsMyReview } from "../queue";
 import { branchNodeIds, buildTableTree } from "../tableTree";
