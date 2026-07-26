@@ -116,6 +116,23 @@ export interface ReadyOut {
   config_fingerprint: string | null;
 }
 
+/** Authentication modes from spec D42. */
+export type AuthProviderName = "none" | "oidc" | "ldap" | "token";
+
+/**
+ * `GET /api/v1/me`.
+ *
+ * The server's `MeOut` currently carries only `user` — the D42 `auth/` module
+ * (and with it `auth.provider`) is not built yet. `auth` is therefore
+ * optional, and an absent value means the dev `none` provider: the moment the
+ * backend starts reporting a provider, the UI switches to the read-only
+ * identity display with no frontend change (D42, UI_SPECIFICATION.md §3).
+ */
+export interface MeOut {
+  user: string;
+  auth?: { provider: AuthProviderName } | null;
+}
+
 export interface ChangeItemIn {
   op: ChangeOp;
   key: Record<string, unknown> | null;

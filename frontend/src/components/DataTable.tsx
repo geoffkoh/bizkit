@@ -6,11 +6,15 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useMemo, useState, type ReactNode } from "react";
+import { GridHeaderCell } from "./GridHeaderCell";
+import { Truncate } from "./Truncate";
 
 /** Shared sortable + column-resizable table (UI_SPECIFICATION.md §2.1).
  *
- * Keeps every list table consistent with the rows grid: clickable
- * sort headers with ▲/▼, draggable column edges, card styling.
+ * Every list table is this component — the Queue and the table browser's
+ * Changesets tab included — so they all get the same card treatment, the same
+ * focusable three-state sort headers (via `GridHeaderCell`) and the same
+ * truncate-with-tooltip overflow behaviour as the rows grid.
  */
 
 export interface DataColumn<T> {
@@ -19,6 +23,8 @@ export interface DataColumn<T> {
   accessor: (row: T) => unknown;
   cell?: (row: T) => ReactNode;
   size?: number;
+  /** Numeric/ID column: aligns figures with `tabular-nums` (§2.1). */
+  numeric?: boolean;
 }
 
 export function DataTable<T>({
@@ -52,44 +58,32 @@ export function DataTable<T>({
     getSortedRowModel: getSortedRowModel(),
     enableColumnResizing: true,
     columnResizeMode: "onChange",
-    defaultColumn: { minSize: 60, maxSize: 600 },
+    defaultColumn: { minSize: 70, maxSize: 600 },
   });
 
   if (data.length === 0 && emptyText) {
-    return <p className="muted">{emptyText}</p>;
+    return <p className="muted empty-state">{emptyText}</p>;
   }
 
   return (
     <div className="table-wrap">
-      <table>
+      <table className="data-table">
         <thead>
           <tr>
             {table.getHeaderGroups()[0]?.headers.map((header) => {
               const spec = columns.find((c) => c.id === header.column.id);
-              const sorted = header.column.getIsSorted();
               return (
-                <th
+                <GridHeaderCell
                   key={header.id}
-                  className="sortable"
-                  style={{ width: header.getSize() }}
-                  onClick={header.column.getToggleSortingHandler()}
-                  title="click to sort"
-                >
-                  {spec?.header}
-                  {sorted && (
-                    <span className="sort-ind">
-                      {sorted === "asc" ? " ▲" : " ▼"}
-                    </span>
-                  )}
-                  <span
-                    className={`col-resizer ${
-                      header.column.getIsResizing() ? "resizing" : ""
-                    }`}
-                    onMouseDown={header.getResizeHandler()}
-                    onTouchStart={header.getResizeHandler()}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </th>
+                  label={spec?.header ?? header.column.id}
+                  width={header.getSize()}
+                  canSort
+                  sorted={header.column.getIsSorted()}
+                  numeric={spec?.numeric}
+                  onSort={header.column.getToggleSortingHandler()}
+                  resizeHandler={header.getResizeHandler()}
+                  resizing={header.column.getIsResizing()}
+                />
               );
             })}
           </tr>
@@ -98,10 +92,12 @@ export function DataTable<T>({
           {table.getRowModel().rows.map((row) => (
             <tr key={rowKey(row.original)}>
               {columns.map((c) => (
-                <td key={c.id}>
-                  {c.cell
-                    ? c.cell(row.original)
-                    : String(c.accessor(row.original) ?? "")}
+                <td key={c.id} className={c.numeric ? "tabular" : undefined}>
+                  {c.cell ? (
+                    c.cell(row.original)
+                  ) : (
+                    <Truncate text={String(c.accessor(row.original) ?? "")} />
+                  )}
                 </td>
               ))}
             </tr>

@@ -66,13 +66,28 @@ state semantics.
   reads as unpolished as an inconsistent shadow would.
 - **Color**: light + dark via `prefers-color-scheme`; neutral surfaces
   (`--bg`, `--fg`, `--muted`, `--border`), one accent (`--accent`,
-  blue) reserved for navigation/primary actions. Two additions for
+  blue) reserved for navigation/primary actions. Five additions for
   layering and accessibility, same rules (light/dark pair, never
   repurposed): `--bg-hover` (row/list-item hover tint — a step between
-  `--bg` and `--border`, distinct from the semantic op/state tints) and
-  `--focus-ring` (the accent at reduced opacity, e.g.
-  `color-mix(in srgb, var(--accent) 45%, transparent)`) for the focus
-  treatment in §2.4.
+  `--bg` and `--border`, distinct from the semantic op/state tints);
+  `--bg-subtle` (the tinted table header row and other at-rest
+  secondary surfaces — one step off `--bg`, weaker than `--bg-hover` so
+  a hovered row still reads as hovered against a tinted header);
+  `--border-strong` (the "slight `--border` darkening" on button/card
+  hover in §2.4, and the dark-theme `shadow-sm` ring); `--accent-fg`
+  (text/icons *on* an accent fill — must clear AA against `--accent` in
+  both themes; accent hover/pressed derive as
+  `color-mix(in srgb, var(--accent) 88%, var(--fg))` rather than getting
+  their own tokens); and `--focus-ring` (the accent at reduced opacity,
+  e.g. `color-mix(in srgb, var(--accent) 45%, transparent)`) for the
+  focus treatment in §2.4.
+- **Semantic families are triples, not single hues**: every state/op
+  token below resolves to a base, a `-fg` (text on neutral ground), a
+  `-border`, and a `-bg` tint, so badges, chips, and row tints all draw
+  from one pair instead of each screen mixing its own alpha. Grid row
+  tints for the D39 basket are their own weaker step
+  (`--row-tint-update|insert|delete`) — a tinted *row* must stay
+  readable under text, where a badge fill does not.
 - **Semantic state colors** (fixed; never repurposed):
 
 | Token | States/ops | Light value family |
@@ -83,6 +98,14 @@ state semantics.
 | state-negative | rejected, failed; op `delete` | red |
 | state-warning | expired, overdue deadlines; op `update`; self-approval badge | amber |
 | op-insert | op `insert` | green |
+
+One deliberate exception, scoped and named so it can't spread: the
+**rule-kind** badges in the Rules & policy tab (§4.1) need a fourth hue
+for `cross_table`, which no state family owns. That is
+`--kind-cross-table` (purple) — valid *only* on a rule-kind badge, never
+on a state, op, or row tint. The other three kinds reuse
+state-pending (constraint), op-insert (type), and state-warning
+(cross-field).
 
 ### 2.2 Elevation
 
@@ -96,11 +119,19 @@ ad hoc per component:
 | `shadow-none` | Grids, cards, sidebar, at-rest surfaces | none (border only) | none (border only) |
 | `shadow-sm` | Hovered row-action buttons, dragged column resizer | `0 1px 2px rgba(0,0,0,.06)` | none — use a 1px lighter `--border` highlight instead |
 | `shadow-md` | Dropdowns, popovers, tooltips, the column rule-dot tooltip | `0 4px 12px rgba(0,0,0,.12)` | `0 4px 12px rgba(0,0,0,.4)` + 1px `--border` |
-| `shadow-lg` | Basket review slide-over, modals/confirmations | `0 8px 30px rgba(0,0,0,.16)` | `0 8px 30px rgba(0,0,0,.5)` + 1px `--border` |
+| `shadow-lg` | Basket review slide-over, modals/confirmations, the docked draft-basket bar | `0 8px 30px rgba(0,0,0,.16)` | `0 8px 30px rgba(0,0,0,.5)` + 1px `--border` |
 
 Dark theme leans on the 1px border more than the shadow (shadows read
 as muddy haze on dark surfaces, not depth) — this is a deliberate
-light/dark asymmetry, not an oversight.
+light/dark asymmetry, not an oversight. In dark, `shadow-sm` is an
+**outset spread-only ring** (`0 0 0 1px var(--border-strong)`), not an
+inset one, so a component can write `box-shadow: var(--shadow-sm)`
+unconditionally and get the right treatment per theme.
+
+The docked basket bar (§4.1) is grouped with `shadow-lg` rather than
+getting a step of its own: it is docked, but it floats above the grid
+and is the same "you are about to commit something" surface class as the
+review slide-over it opens.
 
 ### 2.3 Motion
 
@@ -115,8 +146,11 @@ Three durations, two easings — same rule as elevation, picked by role:
 | `easing-enter` | `cubic-bezier(0.2, 0, 0, 1)` | Anything appearing (ease-out — fast start, gentle stop) |
 | `easing-exit` | `cubic-bezier(0.4, 0, 1, 1)` | Anything disappearing (ease-in) |
 
-- Loading skeletons shimmer on a slow (1.5s+), low-contrast loop —
-  never the attention-grabbing kind.
+- Loading skeletons shimmer on a slow, low-contrast loop
+  (`--duration-shimmer`, 1800ms) — never the attention-grabbing kind.
+  Two further durations are tokens rather than inline figures for the
+  same reason: `--duration-spin` (800ms, the `spinner` icon's rotation)
+  and `--duration-toast` (4000ms, the §6 auto-dismiss TTL).
 - Mutations stay non-optimistic (§6) but the *affordance* still responds
   instantly (button press state, disabled state) so the UI never feels
   inert while a request is in flight.
@@ -140,15 +174,29 @@ an unfinished component, not a smaller one:
   `:focus-visible` semantics — never suppressed with
   `outline: none` without a replacement.
 - **Disabled**: 50% opacity, `cursor: not-allowed`, no hover/press
-  response; disabled controls still explain *why* on hover/tooltip
-  where the reason isn't obvious (e.g. "cap reached").
+  response (hover rules are guarded, not merely overridden); disabled
+  controls still explain *why* where the reason isn't obvious (e.g. "cap
+  reached", "keyless table — updates need a row key"). That explanation
+  uses the **shared `Tooltip` primitive**, not a native `title`: the
+  same bubble (`shadow-md`, `duration-base`) that the truncate-and-hover
+  cell renderer in §4.1 and the sidebar's long-name treatment (§3) sit
+  on top of. One tooltip component, three consumers — a native `title`
+  is not an acceptable substitute, because it can't be styled, is
+  slow to appear, and gets shadowed wherever a real tooltip is nearby.
 
 ### 2.5 Fixed integrity signals (non-negotiable, from the system spec)
 
 - State badge + revision on every changeset surface.
 - `SELF-APPROVED` badge on qualifying decisions (D26/D27) — amber,
   bordered, uppercase; appears in decisions, detail, and queue rows.
-- Overdue deadlines in state-warning red/amber with "(overdue)" text
+  ⚠️ **Queue rows are blocked on an API change**: `ChangesetOut` carries
+  no `self_approved` field, and the only client-side alternative is an
+  N+1 `/decisions` fetch per row — which is not an acceptable way to
+  render a list. The badge is live in the decisions list and on the
+  changeset detail header; it will be absent from queue rows until
+  `ChangesetOut` gains the boolean (a UX-driven API need for
+  SPECIFICATION.md §7).
+- Overdue deadlines in state-warning (amber) with "(overdue)" text
   (D21).
 - Audit trail always reachable from a changeset (read-only).
 
@@ -208,6 +256,26 @@ an unfinished component, not a smaller one:
     for" while also giving readers their view-only list, and scales to
     targets that expose many schemas (or many databases-as-schemas)
     without flattening them into one long alphabetical list.
+    A backend that exposes >1 schema where one of them is null labels
+    that node **`(default)`**; the route still uses the `-` placeholder
+    segment.
+    **Accessibility pattern**: the tree implements APG *Disclosure
+    Navigation* (nested lists, `<button aria-expanded>` per branch,
+    arrow-key convenience) rather than formal `role="tree"` with a
+    roving tabindex — every row stays in the tab order, which is right
+    at nav-rail scale. Revisit if a single caller can routinely see
+    hundreds of tables.
+    **In the 64px rail** the tree flattens to an icon list: chevrons
+    hidden, indentation zeroed, backend `server` icons and table
+    affordance icons kept in DOM order. Because the label is the only
+    thing identifying a row, **every rail icon carries the shared
+    tooltip** with its full name (plus the backend/schema breadcrumb for
+    tables) — a rail you cannot read is worse than no rail.
+    Below 900px the auto-collapse **wins over the user's toggle**: the
+    toggle renders disabled with the §2.4 reason tooltip. The stored
+    width and collapse preferences are never overwritten by the
+    breakpoint, so a user's chosen width returns when the viewport grows
+    back.
   - **Admin**: grants management; hidden unless the store access adapter
     is active and the caller holds admin.
 - **Topbar**: brand (→ Queue); a **command palette trigger** (search
@@ -215,17 +283,50 @@ an unfinished component, not a smaller one:
   pill, never a loud button); identity control (dev: editable
   acting-as picker; production: display-only, from auth); readiness dot
   with config fingerprint tooltip.
+  - The identity control is gated on `GET /api/v1/me`'s
+    `auth.provider` (D42): the editable dev picker renders **only** for
+    `none`, everything else gets the read-only display. An **absent**
+    `auth` object is read as `none`, which is today's posture — the
+    backend `auth/` module does not exist yet and `MeOut` returns only
+    `{user}`. This is deliberate so the gate becomes correct the moment
+    the backend starts reporting a provider, with no frontend change.
+    The `oidc` sign-in redirect and `ldap` login form (plus their
+    session-expired and sign-in-failed states) remain undesigned and
+    unimplemented.
 - **Command palette** (`⌘K`/`Ctrl+K`, or the topbar trigger): a centered
   overlay (`shadow-lg`, fade+scale via `duration-base`/`easing-enter`,
   same scrim treatment as the basket slide-over) with a search input and
   live-filtered, grouped results — **Tables** (icon = the same
   pencil/eye affordance markers as the sidebar tree, with the
   backend/schema breadcrumb as secondary text), **Changesets** (state
-  badge + title), **Actions** (e.g. "Go to Queue"). Arrow keys move a
+  badge + title), **Actions**. Arrow keys move a
   selection, Enter activates it, Esc or a scrim click closes it — it is
   a second index onto the same navigable set as the sidebar tree and
-  queue, not a separate feature with its own data. Empty/no-match state
+  queue, not a separate feature with its own data: it reads the same
+  tables/changesets query caches the sidebar and queue already populate
+  and issues **zero additional requests**. Empty/no-match state
   follows the one-sentence convention (§6).
+  - **Ranking and caps**: prefix matches rank above substring matches,
+    then alphabetical; fixed group order (Tables → Changesets →
+    Actions); 8 results per group, and a truncated group shows a muted
+    "+N more — keep typing" line so the cap is never silent. An **empty
+    query lists everything** (still capped), so the palette doubles as a
+    browse affordance rather than an empty box. Fuzzy matching and a
+    recency group are deliberately deferred until a deployment's table
+    count demands them.
+  - **Actions group**: "Go to Queue", "New changeset", and
+    "Collapse/Expand navigation" (label reflects current state; omitted
+    entirely while railed by the 900px breakpoint, where the toggle is
+    disabled).
+  - **Keyboard**: `⌘K`/`Ctrl+K` toggles — but is **ignored while the
+    user is typing** in an input/textarea/select/contenteditable, and
+    while a modal or slide-over is open (the palette never stacks over
+    another floating surface). Up/Down move with wrapping, Home/End jump
+    to first/last, Enter activates, Esc closes. Focus is trapped in the
+    search input and driven by `aria-activedescendant`
+    (`role="combobox"` + `role="listbox"`/`option`), so Tab is swallowed
+    rather than escaping the overlay; focus returns to the topbar
+    trigger on every close path.
 - Sidebar contents come from `GET /api/v1/tables` (server-computed
   affordances — D25); the response's `schema` field drives the tree
   grouping, so a caller who can see a table in a normally-hidden schema
@@ -263,7 +364,12 @@ sort/filter/pagination model and manual mode):
   request is in flight, and the other headers dim/ignore clicks until
   it resolves (prevents a second sort request racing the first) — a
   maker should never need to know or care which mode a given table is
-  in.
+  in. **Implementation note**: the spinner is currently keyed to "a rows
+  refetch is in flight" rather than "a sort request is in flight" (the
+  paged query's `isFetching` covers sort, search, and page changes
+  alike), so a page change also briefly makes headers inert. Harmless —
+  it still prevents racing — but it is a deviation from the letter of
+  this clause.
 - **Columns are resizable**: drag the header's right edge (TanStack
   column sizing, 70–600px, accent-highlighted handle, `cursor:
   col-resize`). Manual widening is the maker's own remedy for a column
@@ -275,6 +381,13 @@ sort/filter/pagination model and manual mode):
   inspection without entering edit mode. Editing a long-text column
   (row edit, D39) renders a multi-line `textarea` instead of a
   single-line input, so the full value is visible and editable at once.
+  ⚠️ "Flagged long-text" has **no data to key off today**: `ColumnOut` is
+  `{name, type, nullable, primary_key}` and `type` is the normalised
+  domain type (`string`/`integer`/…) with no length. The implementation
+  falls back to the *value's* length (≥80 chars ⇒ `textarea`), which
+  covers the real cases but cannot know that an empty `varchar(4000)` is
+  a long-text column. A `max_length` or `long_text` field on `ColumnOut`
+  would close it properly (UX-driven API need for SPECIFICATION.md §7).
   This is a deliberate three-tier answer (truncate → hover for the full
   value → widen the column or edit for real), not a single trick that
   only half-solves it; it's also the intended interim answer to the
@@ -418,6 +531,14 @@ the UX is correct on day one.)
    basket (D36), apply/retry actions, grants admin (D22),
    keyboard grid navigation. (Rules & policy tab, grid search/sort, and
    the collapsible colored sidebar shipped with P2.)
+
+P1 and P2 are implemented, including the §2.1–2.5 craft layer, the
+sidebar tree, the command palette, and the toast system. Known gaps
+carried into P3, each recorded at its clause above: `SELF-APPROVED` on
+queue rows and the long-text column flag (both blocked on an API field),
+keyboard column resizing (the sidebar separator has the full treatment;
+TanStack column sizing is still drag-only), and the server-sort
+spinner's refetch keying.
 
 ## 8. Open questions (for future decisions)
 

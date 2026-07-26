@@ -14,6 +14,7 @@ import type {
   CreateChangesetIn,
   DecisionOut,
   ImportReportOut,
+  MeOut,
   ReadyOut,
   RowsOut,
   TableOut,
@@ -72,6 +73,8 @@ async function request<T>(
 
 export const api = {
   ready: () => request<ReadyOut>("/api/ready"),
+  /** The caller's identity, display-only (D42). Never a token store. */
+  me: () => request<MeOut>("/api/v1/me"),
   listTables: () => request<TableOut[]>("/api/v1/tables"),
   listColumns: (backend: string, schema: string | null, table: string) =>
     request<ColumnOut[]>(
