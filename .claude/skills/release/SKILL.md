@@ -38,7 +38,7 @@ failure stops the release.
   clean afterwards). A dirty diff means someone changed the SPA without
   rebuilding: commit the fresh bundle first.
 
-## 4. Store migrations (D34, D45)
+## 4. Store migrations (D34, D46)
 
 - Any change to `src/bizkit/store/models.py` since the last tag **must**
   have a matching revision in `src/bizkit/store/migrations/versions/`.
@@ -51,10 +51,10 @@ failure stops the release.
 - Autogenerate must report no pending drift against `Base.metadata`:
   `uv run alembic -c src/bizkit/store/alembic.ini check`.
 - `bizkit store upgrade --sql` produces valid DDL without touching a
-  database (the DBA-applied path, D45).
+  database (the DBA-applied path, D46).
 - Confirm no revision in this release rewrites or deletes audit rows, and
   that any column dropped was already unused in the *previous* release
-  (expand/contract, D45).
+  (expand/contract, D46).
 
 ## 5. Build and smoke-install
 

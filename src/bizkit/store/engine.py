@@ -1,7 +1,7 @@
 """Engine and session factories for the workflow store.
 
 Sync SQLAlchemy only (spec D2). The schema itself is owned by the Alembic
-chain in :mod:`bizkit.store.schema` (D45) — there is deliberately no
+chain in :mod:`bizkit.store.schema` (D46) — there is deliberately no
 ``create_all`` here, because it silently skips existing tables and so cannot
 serve as an upgrade path.
 """

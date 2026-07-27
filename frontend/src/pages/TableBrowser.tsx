@@ -9,7 +9,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import { api, currentUser } from "../api";
 import { DataTable, type DataColumn } from "../components/DataTable";
 import { GridHeaderCell } from "../components/GridHeaderCell";

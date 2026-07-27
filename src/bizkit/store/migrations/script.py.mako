@@ -4,7 +4,7 @@ Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Created: ${create_date}
 
-Store migrations are forward-only and expand/contract (spec D45): additive
+Store migrations are forward-only and expand/contract (spec D46): additive
 and N-1-compatible here, the contracting drop a release later. Never rewrite
 audit rows -- D35's append-only guarantee holds through upgrades.
 """

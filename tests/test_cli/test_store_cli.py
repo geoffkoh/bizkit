@@ -1,4 +1,4 @@
-"""The `bizkit store` schema commands (spec D45)."""
+"""The `bizkit store` schema commands (spec D46)."""
 
 from pathlib import Path
 
@@ -23,7 +23,7 @@ def store_url(tmp_path: Path) -> str:
 def test_a_command_on_an_uninitialized_store_says_what_to_run(
     runner: CliRunner, store_url: str
 ) -> None:
-    """No implicit migration: the command stops and names the fix (D45)."""
+    """No implicit migration: the command stops and names the fix (D46)."""
     result = runner.invoke(cli, ["--store-url", store_url, "list"])
 
     assert result.exit_code != 0
@@ -95,7 +95,7 @@ def test_history_lists_the_chain(runner: CliRunner) -> None:
 def test_store_group_works_without_a_workspace_file(
     runner: CliRunner, store_url: str, tmp_path: Path
 ) -> None:
-    """Schema plumbing must run before a workspace exists (D45)."""
+    """Schema plumbing must run before a workspace exists (D46)."""
     missing = tmp_path / "nope.json"
 
     result = runner.invoke(

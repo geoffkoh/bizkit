@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type JSX } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api, currentUser } from "../api";
 import { DataTable, type DataColumn } from "../components/DataTable";
 import { SkeletonTable } from "../components/Skeleton";

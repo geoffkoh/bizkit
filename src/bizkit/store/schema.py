@@ -1,4 +1,4 @@
-"""Store schema lifecycle: Alembic migrations (spec D45).
+"""Store schema lifecycle: Alembic migrations (spec D46).
 
 The store's schema is owned by the forward-only migration chain in
 ``migrations/versions/``, shipped inside the wheel. Creating a fresh store
@@ -106,7 +106,7 @@ def upgrade(engine: Engine, revision: str = "head") -> None:
 
 
 def emit_sql(url: str, revision: str = "head", stream: TextIO | None = None) -> None:
-    """Write the upgrade DDL without touching a database (D45 offline mode).
+    """Write the upgrade DDL without touching a database (D46 offline mode).
 
     Args:
         url: Store URL — used for dialect selection only; no connection is
@@ -146,7 +146,7 @@ def history() -> list[tuple[str, str]]:
 def verify_revision(engine: Engine) -> None:
     """Check a store's schema against this build, without changing it.
 
-    bizkit never migrates as a side effect of starting (D45): an operator
+    bizkit never migrates as a side effect of starting (D46): an operator
     runs the upgrade deliberately, so a mismatch is a startup failure.
 
     Args:

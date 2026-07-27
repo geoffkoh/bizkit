@@ -4,16 +4,16 @@ Revision ID: 0001
 Revises:
 Created: 2026-07-27
 
-The starting point of the migration chain (spec D45): the four always-present
+The starting point of the migration chain (spec D46): the four always-present
 store tables as they stood when ``metadata.create_all`` was retired.
 
-Adoption case: a store created by the pre-D45 ``create_all`` path already has
+Adoption case: a store created by the pre-D46 ``create_all`` path already has
 these tables. Recreating them would fail, and dropping them would destroy the
 audit trail, so this revision **skips creation when the schema is already
 there** and simply stamps it — the same end state, without touching a row.
 Later revisions need no such check; they are ordinary forward migrations.
 
-Store migrations are forward-only and expand/contract (spec D45): additive
+Store migrations are forward-only and expand/contract (spec D46): additive
 and N-1-compatible here, the contracting drop a release later. Never rewrite
 audit rows -- D35's append-only guarantee holds through upgrades.
 """
@@ -33,7 +33,7 @@ def _already_present() -> bool:
     """Report whether a pre-migration store already holds these tables.
 
     Returns:
-        True if the store predates D45 and needs stamping rather than
+        True if the store predates D46 and needs stamping rather than
         creating. Always False offline, where there is no database to
         inspect and generated DDL assumes a fresh store.
     """

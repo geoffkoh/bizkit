@@ -55,7 +55,7 @@ class StoreError(BizkitError):
 
 
 class StoreSchemaError(StoreError):
-    """The store's schema revision does not match the code's (spec D45).
+    """The store's schema revision does not match the code's (spec D46).
 
     Raised instead of migrating implicitly: bizkit never upgrades a store as
     a side effect of starting up.

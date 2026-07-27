@@ -27,7 +27,7 @@ def migrate_store() -> Callable[[str], None]:
     """Migrate a store URL to head, as a deployment would before starting.
 
     `create_app` verifies the schema and refuses to migrate on its own
-    (spec D45), so anything constructing an app must do this first.
+    (spec D46), so anything constructing an app must do this first.
 
     Returns:
         A callable taking the store URL.
@@ -48,7 +48,7 @@ def store_engine() -> Iterator[Engine]:
     """In-memory SQLite store migrated to head.
 
     The fast suite runs the real migration chain rather than a shortcut, so
-    every revision is exercised on every run (spec D45).
+    every revision is exercised on every run (spec D46).
     """
     engine = create_store_engine("sqlite+pysqlite:///:memory:")
     upgrade(engine)

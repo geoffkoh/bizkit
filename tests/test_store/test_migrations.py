@@ -1,6 +1,6 @@
-"""Store schema lifecycle: migrations, retention, and drift (spec D45).
+"""Store schema lifecycle: migrations, retention, and drift (spec D46).
 
-The retention test is the one that makes D45's promise checkable: an
+The retention test is the one that makes D46's promise checkable: an
 upgrade must carry existing changesets, decisions, comments, and audit
 events forward untouched. Everything else here guards the surrounding
 policy — no implicit migration, no silent start against a mismatched
@@ -63,7 +63,7 @@ def test_upgrade_is_idempotent(store_url: str) -> None:
 def test_upgrade_retains_existing_rows(
     store_url: str, sample_changeset: Changeset
 ) -> None:
-    """The D45 guarantee: an upgrade never costs an operator their data.
+    """The D46 guarantee: an upgrade never costs an operator their data.
 
     Populates every store table at the current head, re-runs the chain, and
     checks each row back — including the audit trail, whose append-only
@@ -120,7 +120,7 @@ def test_upgrade_retains_existing_rows(
 
 
 def test_baseline_adopts_a_store_created_before_migrations(store_url: str) -> None:
-    """A pre-D45 store (created by ``create_all``) upgrades without loss.
+    """A pre-D46 store (created by ``create_all``) upgrades without loss.
 
     The baseline detects the existing tables and stamps instead of
     recreating them, so the audit trail survives adoption.
@@ -181,7 +181,7 @@ def test_verify_rejects_a_store_ahead_of_the_code(store_url: str) -> None:
 
 
 def test_the_app_refuses_to_start_on_an_unmigrated_store(store_url: str) -> None:
-    """`create_app` verifies but never migrates (D45)."""
+    """`create_app` verifies but never migrates (D46)."""
     with pytest.raises(StoreSchemaError):
         create_app(BizkitConfig(store_url=store_url))
 

@@ -1,4 +1,4 @@
-"""Alembic environment for the bizkit workflow store (spec D45).
+"""Alembic environment for the bizkit workflow store (spec D46).
 
 Runs in three modes:
 
@@ -9,7 +9,7 @@ Runs in three modes:
 * **Online, own engine** — built from the URL in ``config.attributes["url"]``
   or ``sqlalchemy.url``.
 * **Offline (``--sql``)** — emits DDL to stdout and touches no database, for
-  deployments where a DBA applies schema changes from a ticket (D45).
+  deployments where a DBA applies schema changes from a ticket (D46).
 
 ``render_as_batch`` is on because the dev store is SQLite, which cannot
 ``ALTER`` most things in place and needs Alembic's copy-and-move rebuild.
