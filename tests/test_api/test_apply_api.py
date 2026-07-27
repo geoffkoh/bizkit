@@ -7,7 +7,7 @@ attempt can be refused or fail.
 
 import json
 import sqlite3
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import httpx
@@ -66,7 +66,10 @@ def target_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-async def client(tmp_path: Path, target_db: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    tmp_path: Path, target_db: Path, migrate_store: Callable[[str], None]
+) -> AsyncIterator[httpx.AsyncClient]:
+    migrate_store(f"sqlite+pysqlite:///{tmp_path / 'store.db'}")
     app = create_app(workspace=load_workspace(_workspace(tmp_path, target_db)))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(

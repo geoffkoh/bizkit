@@ -38,12 +38,23 @@ failure stops the release.
   clean afterwards). A dirty diff means someone changed the SPA without
   rebuilding: commit the fresh bundle first.
 
-## 4. Store migrations (D34)
+## 4. Store migrations (D34, D46)
 
-- Pre-GA: confirm `metadata.create_all` path still documented dev-only.
-- Post-GA: `alembic upgrade head` green on (a) a fresh store and (b) a
-  store created from the previous release; any store-schema change since
-  the last tag must have a migration.
+- Any change to `src/bizkit/store/models.py` since the last tag **must**
+  have a matching revision in `src/bizkit/store/migrations/versions/`.
+  Check with `git diff <last-tag>..HEAD -- src/bizkit/store/`.
+- `bizkit store upgrade` green on (a) a fresh store and (b) a store
+  created from the **previous release** — build the old store by
+  installing the previous wheel or checking out the tag, seeding it, then
+  upgrading with the new code. That second case is the one that catches
+  real upgrade breakage.
+- Autogenerate must report no pending drift against `Base.metadata`:
+  `uv run alembic -c src/bizkit/store/alembic.ini check`.
+- `bizkit store upgrade --sql` produces valid DDL without touching a
+  database (the DBA-applied path, D46).
+- Confirm no revision in this release rewrites or deletes audit rows, and
+  that any column dropped was already unused in the *previous* release
+  (expand/contract, D46).
 
 ## 5. Build and smoke-install
 

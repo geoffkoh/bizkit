@@ -11,10 +11,10 @@ from bizkit.domain.table import TableRef
 from bizkit.services.comments import CommentService
 from bizkit.services.workflow import WorkflowService
 from bizkit.store.engine import (
-    create_schema,
     create_session_factory,
     create_store_engine,
 )
+from bizkit.store.schema import upgrade
 from bizkit.store.repositories import (
     SqlAlchemyAuditLog,
     SqlAlchemyChangesetRepository,
@@ -80,7 +80,9 @@ def seed(
     loaded = load_workspace(workspace_path)
 
     engine = create_store_engine(store_url)
-    create_schema(engine)
+    # Seeding a scenario may target a store that does not exist yet, so it
+    # migrates to head rather than assuming a schema (spec D46).
+    upgrade(engine)
     factory = create_session_factory(engine)
 
     backend_cache: dict[str, BaseBackend] = {}

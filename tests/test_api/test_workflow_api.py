@@ -1,7 +1,7 @@
 """End-to-end API tests for the workflow, comments, and tables routes."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import httpx
@@ -12,13 +12,15 @@ from bizkit.workspace.loader import load_workspace
 
 
 @pytest.fixture
-async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    tmp_path: Path, migrate_store: Callable[[str], None]
+) -> AsyncIterator[httpx.AsyncClient]:
     workspace_path = tmp_path / "ws.json"
     workspace_path.write_text(
         json.dumps(
             {
                 "version": 1,
-                "store_url": "sqlite+pysqlite:///:memory:",
+                "store_url": f"sqlite+pysqlite:///{tmp_path / 'store.db'}",
                 "tables": [
                     {
                         "backend": "sample",
@@ -49,6 +51,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         ),
         encoding="utf-8",
     )
+    migrate_store(f"sqlite+pysqlite:///{tmp_path / 'store.db'}")
     app = create_app(workspace=load_workspace(workspace_path))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(

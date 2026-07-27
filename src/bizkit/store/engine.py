@@ -1,14 +1,14 @@
 """Engine and session factories for the workflow store.
 
-Sync SQLAlchemy only (spec D2). Schema creation via ``create_all`` is a
-dev-only path; Alembic migrations are a pre-GA gate (D34).
+Sync SQLAlchemy only (spec D2). The schema itself is owned by the Alembic
+chain in :mod:`bizkit.store.schema` (D46) — there is deliberately no
+``create_all`` here, because it silently skips existing tables and so cannot
+serve as an upgrade path.
 """
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from bizkit.store.models import Base
 
 
 def create_store_engine(url: str) -> Engine:
@@ -30,11 +30,6 @@ def create_store_engine(url: str) -> Engine:
             poolclass=StaticPool,
         )
     return create_engine(url)
-
-
-def create_schema(engine: Engine) -> None:
-    """Create the store schema (dev-only path; see spec D34)."""
-    Base.metadata.create_all(engine)
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:

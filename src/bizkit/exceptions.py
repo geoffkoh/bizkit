@@ -54,6 +54,14 @@ class StoreError(BizkitError):
     """The workflow metadata store could not complete an operation."""
 
 
+class StoreSchemaError(StoreError):
+    """The store's schema revision does not match the code's (spec D46).
+
+    Raised instead of migrating implicitly: bizkit never upgrades a store as
+    a side effect of starting up.
+    """
+
+
 class ConcurrencyError(BizkitError):
     """An optimistic-lock conflict: another writer changed the changeset first."""
 

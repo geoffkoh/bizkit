@@ -72,6 +72,7 @@ Numbered, ADR-style. A decision stands until superseded by a later entry.
 | D43 | **Reader is the single view-only/transparency persona; `view` deliberately spans data *and* audit (clarifies D38).** The `view` action grants both browsing current table content AND seeing the governance history around that table — its changesets, review decisions, and audit trail. There is intentionally **no separate `auditor` role and no separate `view_audit`/`audit` action**: an auditor is provisioned as a `reader` on the relevant scope, and every `view`-gated surface (rows, changesets tab, changeset detail, and audit trail) rides on that one action. Considered and rejected: splitting `view` into `view` (data) + `view_audit` (governance history) with an `auditor = {view_audit}` bundle to support a compliance auditor who verifies process integrity (four-eyes honored, self-approvals flagged, deadlines met) *without* seeing the underlying config values — rejected because, for the target deployments, the auditor and the data-reader are the same look-but-don't-touch persona, and splitting `view` would ripple through every view-gated endpoint, the sidebar table-tree visibility, and audit-scope filtering for no current benefit. **Revisit condition**: a real deployment must grant process-audit visibility while denying the (sensitive) config data values — at which point split the **action** (granularity lives in the `Action` enum, not the `Role` set, per D5), keeping `reader = {view, view_audit}` and adding `auditor = {view_audit}`; the role stays a thin bundle over the new action. | Roles are thin bundles of actions (D5) and `is_allowed` checks actions, not roles — an `auditor` role with no distinct underlying action would be cosmetic. Premature granularity is cost without benefit; recording the rejection and its revisit condition keeps a future session from re-deriving the same analysis. |
 | D44 | **Apply milestone: how an approved changeset reaches the target** (implements D9/D12/D13's write path; the `NotImplementedError` stubs §13 flagged are now gone). **One generic DML implementation** lives in `BaseBackend` on SQLAlchemy Core against the reflected table, inherited by all seven dialects (plus the D39 `sqlite` demo backend) — SQLAlchemy compiles per-dialect and binds parameters, so no adapter hand-writes SQL; a dialect overrides only where semantics genuinely differ. `dry_run()` and `apply()` share one code path differing solely in commit-vs-rollback, so a rehearsal exercises the target's real constraints and then leaves nothing behind. Both are **all-or-nothing** in a single transaction, and an UPDATE/DELETE whose key matches anything other than exactly one row is raised as `ApplyError` naming drift rather than absorbed. The backend independently re-checks that the changeset is APPROVED (or FAILED, being retried per D20) — defense in depth behind `WorkflowService`. **`WorkflowService.apply(changeset_id, actor)`** orders the guards: expiry first (D21 guard-on-action), then `Action.APPLY` authorization (checker in the default `ROLE_ACTIONS`, *not* maker), then a state check, then **revalidation** (D12), then the backend handoff. It returns a new **`ApplyResult(changeset, report, error)`** rather than only a `Changeset`: a target-side or validation failure is a *result*, not an exception, because the FAILED transition and its audit event must be committed — an exception would unwind them. Pre-conditions that change nothing (no rights, wrong state, lapsed deadline) still raise. Exactly one audit event per attempt: verb `apply` on success, `apply_failed` on failure with the reason in `detail`. **Rule evaluation is now real** (the D11 schemas gain semantics): `BaseRule.evaluate(item, context)` takes a `RuleContext(table, rows_for)`, where `rows_for` is a lazy per-referenced-table read-only fetch — so a rule set with no cross-table rules never opens a target connection, and a `CrossTableRule` may reference a table in a *different* backend. Two conventions bind every rule: a DELETE carries no values so value-shaped rules skip it, and a column absent from an UPDATE is *unchanged rather than null* (absence is only meaningful on INSERT). `CrossFieldRule.predicate` resolves against a **closed registry** (`domain/predicates.py`) — an unregistered id is a validation *issue*, never an import of behaviour, keeping D11's data-not-code property; a `CrossTableRule` with no `rows_for` reports rather than passing, since failing open would let an unvalidated row reach apply. **Validation now runs at submit as well as pre-apply**, closing the D12 hard constraint: submit raises `ValidationFailedError` (carrying the structured report) without transitioning, so invalid work never reaches a checker's queue; the pre-apply run is what catches drift between approval and apply. Consequence for demo data: an *invalid* changeset can no longer be submitted at all, so the seeded REJECTED example is now a valid change declined on business grounds — rejection is human judgement, not a stand-in for validation. **Delivery**: `POST /api/v1/changesets/{id}/apply` returning `ApplyResultOut` — a target refusal is a **200 with `ok: false`** and the changeset in FAILED (the attempt is a recorded transition the client must see), while 403/409 stay for refusals that change nothing; `POST …/validate` implemented (was 501) returning `ValidationReportOut`; `bizkit apply <id> --actor <who> [--dry-run]` and `bizkit validate <id>`; and an Apply / Retry apply action in the changeset detail view behind a two-click confirmation naming the target table. `TableActionsOut` gains an **`apply`** field so the UI stops inferring the affordance from `approve` — affordance only, fail-closed, enforcement still server-side (D25). | A maker-checker tool whose approvals never reach the database is a review queue, not a configuration toolkit; APPROVED was a dead end in every delivery layer. One inherited DML implementation avoids seven hand-written SQL generators drifting apart, and sharing it between dry-run and apply is what makes a rehearsal trustworthy. Returning a result instead of throwing is what lets FAILED and its audit event survive the same transaction that produced them. Rejected: per-dialect hand-written DML (drift, injection surface, seven times the tests); treating a target refusal as an HTTP error (loses the recorded transition the audit trail needs); and allowing makers to apply their own approved changesets (four-eyes covers approval; a maker who can also apply narrows the control to one pair of hands at the moment it matters most). |
 | D45 | **Demo seeding lives in `bizkit/demo/`, as named scenarios** (moved out of `cli/main.py`). The seeder had grown to 430 of that module's 808 lines — over half a delivery layer §4 calls thin — while authoring DDL through raw `sqlite3`, writing a workspace config, and scripting a workflow history through two services. None of that is a CLI concern, and nothing else could reuse it: tests could not compose a scenario and a second scenario would have doubled the module. `demo/` is a **peer of `api/` and `cli/`**, not a layer below them: it consumes `workspace`/`store`/`backends`/`services`, so placing it inside either delivery layer would invert the dependency. It is explicitly dev tooling — like the `sqlite` demo backend (D39), it has no role in a real deployment. Shape: a `Scenario` splits into *declarative* parts (`TargetTable` DDL + seed rows; the workspace dict) and one *scripted* part (`populate(ctx)`), because a workflow history is a sequence of authorized service calls whose order carries the meaning — expressing it as data would reinvent the service API with less clarity. Scenarios **never bypass the workflow**: every changeset goes through `WorkflowService`, so a seeded history satisfies four-eyes, revision binding, one-audit-event-per-transition, and validation at submit exactly as production does. `SCENARIOS` is the registry; `--scenario` reads its choices from it, so adding a scenario needs no CLI change. Two scenarios ship. **`sample`** (default, unchanged behaviour, `--seed-sample` retained as its alias) — one target, 5 tables, 8 changesets, every state reachable *without* touching a target. **`enterprise`** — two target profiles (`risk`, `crm`), 8 tables, 10 changesets, covering what `sample` structurally cannot: cross-table rules including a **cross-backend** one (`crm/coverage.desk` → `risk/desks`, the case D44's per-referenced-table resolution exists for), a real **APPLIED** (row written during seeding) and a real **FAILED** (approved against an existing key, so apply trips the primary key and Retry is live), a reject→rework→**revision 2**→approve cycle, narrowly scoped grants (a checker on one table only, a maker across two backends, a reader across both, an admin), a self-approved changeset that needs *both* `approve` rights and the table's `allow_self_approval`, and a deliberately invalid DRAFT that produces a blocking cross-table report when submitted — which cannot be seeded further along, since submit refuses invalid work (D12). Every scenario is held to two properties by parameterized tests: each APPROVED changeset must pass `dry_run` against the seeded target, and each pending update/delete must key a row that exists. | A demo is the first thing a new user and a fresh session both run, so its data has to be trustworthy — and it was not: before apply existed the `sample` seed proposed inserting rows the target already held, which was silently impossible to apply and invisible until D44. Making scenarios first-class puts them under test, and the two properties above turn that class of bug into a failing test rather than a confusing demo. Rejected: keeping the seeder in `cli/` behind a helper module (leaves the layering violation and the reuse problem); making the changeset history fully declarative (a worse spelling of the service API); and a single ever-growing scenario (the small default is what makes the tool learnable, so richness had to be additive rather than replacing it). |
+| D46 | **Store upgrade policy** (implements D34, refines D17): store schema changes ship as **forward-only Alembic migrations bundled in the wheel**, and upgrades are **explicit, never automatic**. (a) `bizkit store upgrade` applies migrations; creating a fresh store is the same code path (`upgrade head` against an empty database), so `init-store` delegates to it and dev never diverges from prod. `--sql` emits offline DDL for environments where a DBA applies schema changes, and `bizkit store stamp <rev>` records an out-of-band application; `store current` / `store history` report position. (b) **The application never migrates at startup** — `create_app()` and the CLI *verify* `alembic_version` against head and refuse to start when the store is behind (naming the command to run) or ahead (code older than the store). The revision is exposed on `GET /api/ready`. (c) Schema changes follow **expand/contract**: a release adds only additive, N−1-compatible structures (nullable column, new table, new index); backfills run batched; the contracting drop lands in a *later* release. A rename is add + backfill + drop, never `ALTER … RENAME`, and `NOT NULL` is set only after the backfill. (d) **Forward-only**: `downgrade()` is best-effort at most — the supported rollback for a store holding an audit trail is restore-from-backup. (e) Migrations never rewrite audit rows; D35's append-only guarantee holds *through* upgrades, and columns are added to `bizkit_audit_events` rather than history being transformed. (f) DDL runs under a separate elevated credential at deploy time; the runtime credential keeps no DDL rights (D29). | `metadata.create_all` diffs at table granularity only: it silently skips an existing table whose columns have drifted, so a "backwards-compatible" model change reports success and leaves the store divergent until a query hits the missing column — the opposite of the fail-fast posture D23 sets for the workspace file. Enterprise targets (Oracle, MSSQL) commonly forbid an application from DDL-ing its own schema, making offline SQL a requirement rather than a nicety. DDL transactionality differs by engine (Postgres transactional; MySQL/Oracle implicitly commit per statement), so one-logical-change-per-revision is what keeps a half-applied upgrade diagnosable. Auto-migrate-at-startup was rejected: replicas race each other, and it forces DDL rights onto the runtime credential. |
 
 ## 3. Domain Model
 
@@ -467,7 +468,11 @@ src/bizkit/
 │   │                #   validation, table, access, identity, ports
 ├── store/           # sync SQLAlchemy persistence of workflow state:
 │   │                #   engine.py, models.py, repositories.py; optional
-│   │                #   store-backed config adapters (access.py, registry.py)
+│   │                #   store-backed config adapters (access.py, registry.py);
+│   │                #   schema.py (Alembic driver: upgrade/current/
+│   │                #   history/stamp, revision check) + alembic.ini and
+│   │                #   migrations/ (env.py, versions/) shipped in the
+│   │                #   wheel (D46)
 ├── workspace/       # file-first config adapters (D22): loader.py
 │   │                #   (YAML/JSON workspace file), registry.py
 │   │                #   (FileTableRegistry), access.py (FileAccessPolicy)
@@ -492,7 +497,8 @@ tests/               # mirrors src; unit tests DB-free; integration marked
 ```
 
 Store tables (always): `bizkit_changesets`, `bizkit_comments`,
-`bizkit_audit_events`, `bizkit_review_decisions`. Only with the optional
+`bizkit_audit_events`, `bizkit_review_decisions`, plus Alembic's
+`alembic_version` bookkeeping table (D46). Only with the optional
 store-backed config adapters (D22): `bizkit_table_configs`,
 `bizkit_rule_sets`, `bizkit_grants`. See ER diagram, §3.10. The store may
 share an instance with a target under the D29 conditions (own
@@ -597,8 +603,13 @@ produces the request's `Identity`, replacing the old blanket-trusted
 otherwise. Structured JSON logging with correlation fields and a
 pluggable metrics hook per D32.
 
+`create_app()` also refuses to start against a store whose schema revision
+does not match the code's head revision (D46) — it never migrates on its
+own.
+
 Endpoints (scaffold → target): `GET /api/health` (liveness),
-`GET /api/ready` (store reachable + config loaded);
+`GET /api/ready` (store reachable + config loaded + store schema revision,
+D46);
 `GET/POST /api/v1/changesets`; `GET /api/v1/changesets/{id}`;
 `POST /api/v1/changesets/{id}/submit|approve|reject|rework|withdraw|apply`;
 `GET/POST /api/v1/changesets/{id}/comments`;
@@ -641,7 +652,13 @@ none`**, gated the same way as the API's trusted-header mode, D42).
 Other providers get their own CLI path: `bizkit login` performs the
 `oidc` device-code grant or prompts once for `ldap` credentials (bound,
 then discarded) and caches a short-lived local session; `token` mode
-reads a bearer token from `--token`/`BIZKIT_TOKEN`. `init-store [--seed-sample]`, `list`,
+reads a bearer token from `--token`/`BIZKIT_TOKEN`.
+`init-store [--seed-sample]` (creates the store by running migrations to
+head — D46; it is `store upgrade` against an empty database, not a
+separate schema definition),
+`store upgrade [--sql] [--revision REV]` (apply migrations, or emit the
+DDL offline for a DBA to run), `store current`, `store history`,
+`store stamp <rev>` (record an out-of-band application), `list`,
 `show`, `submit`, `review` (approve/reject),
 `apply <id> --actor <who> [--dry-run]` (D44 — `--dry-run` rehearses
 against the target and rolls back, printing what would happen and
@@ -664,8 +681,11 @@ resolves the name, chooses paths, and reports what was written.
 naming a file that does not exist is a **hard error**, not a silent fallback
 — without the workspace there are no grants and no targets, so the real
 symptom would otherwise surface much later as a baffling `AccessDenied` or
-"no target profile". The sole exemption is `init-store`, whose
-`--seed-sample` writes the workspace file at that path.
+"no target profile". The exemptions are `init-store`, whose
+`--seed-sample` writes the workspace file at that path, and the `store`
+group (D46), which is schema plumbing needing only `--store-url` — a
+migration must be runnable before any workspace exists, and must not be
+blocked by a workspace that a pending upgrade would make loadable.
 `--seed-sample` creates a demo SQLite target (`sample_target.db`), a demo
 config table, one pending changeset, and sample grants (a maker and a
 checker) so authorization is exercised out of the box. The seed is
@@ -831,6 +851,17 @@ have changed since approval.
   FAILED target untouched, reaches revision 2 on the rework, and keeps its
   deliberately invalid draft in DRAFT with a cross-backend cross-table
   report.
+- Migration coverage (D46): the fast suite runs migrations rather than
+  `create_all`, so every revision is exercised on every test run. Plus an
+  explicit **data-retention test** — build a store at the previous
+  revision, populate changesets, review decisions, comments and audit
+  events, `upgrade head`, then assert every row survives with its values
+  and ordering (`seq`) intact. A revision-drift test asserts the app
+  refuses to start when the store is behind *or* ahead of head, and
+  `--sql` offline mode is asserted to emit DDL without touching the
+  database. Migrations run against SQLite in the fast suite and against
+  Postgres under the `db_postgres` marker — SQLite's batch-mode table
+  rebuild is not evidence that the real dialect works.
 - Frontend suite (`cd frontend && npm test`): **vitest + React Testing
   Library + jsdom**, run alongside `tsc -b`. Covers the queue predicates,
   the draft basket's one-table scoping (UI_SPECIFICATION.md §4.1 — the
@@ -859,7 +890,11 @@ have changed since approval.
 ## 12. Dependencies
 
 Core: `click>=8.1`, `pydantic>=2.0`, `sqlalchemy>=2.0`, `fastapi>=0.115`,
-`uvicorn[standard]>=0.30`; plus `pyyaml>=6` for the YAML workspace config
+`uvicorn[standard]>=0.30`, `alembic>=1.13` (store migrations, D46 —
+**approved 2026-07-27**; it is the SQLAlchemy project's own migration
+tool, ships pure-Python with no new transitive weight beyond `Mako`, and
+must be a *core* dependency because upgrading the store is not optional);
+plus `pyyaml>=6` for the YAML workspace config
 (D22 — **not yet approved/added**; JSON workspace files need stdlib only).
 Extras per §5. Dev: `pytest`, `pytest-asyncio`,
 `httpx`, `ruff`, `mypy` (+ `pytest-cov` in the `dev` extra). Adding any
@@ -1012,9 +1047,25 @@ token hashing).
   generic write path from D44 is inherited but exercised only against
   `sqlite` so far — no live-dialect integration run yet);
   store-backed config adapters (D22); structured logging/metrics (D32);
-  Alembic (D34); `audit export/purge` (D35); CLI workflow commands
+  `audit export/purge` (D35); CLI workflow commands
   (show/submit/review/comment currently stubs — the API/UI cover these
   flows).
+- ✅ D46 store migrations landed: `store/alembic.ini` +
+  `store/migrations/` (env.py with `render_as_batch=True`, borrowed-
+  connection and offline modes; baseline revision `0001` generated from
+  `Base.metadata`), `store/schema.py` driver (`upgrade`, `emit_sql`,
+  `stamp`, `current_revision`, `head_revision`, `history`,
+  `verify_revision`, `describe`), `bizkit store
+  upgrade [--sql]|current|history|stamp` with the `store` group exempt
+  from the `--config`-must-exist rule, `init-store` migrating to head,
+  `StoreSchemaError`, revision verification in `create_app()` and every
+  CLI command that opens the store, and `store_revision` /
+  `store_up_to_date` on `/api/ready`. `create_schema()` is **gone** —
+  no `create_all` remains on any runtime path, and the fast suite
+  migrates instead. Revision `0001` is adoption-safe: it detects a store
+  created by the pre-D46 `create_all` path and stamps rather than
+  recreating, so existing dev stores upgrade without losing their audit
+  trail (verified against a 12-changeset/37-event store).
 - ✅ D44 apply milestone landed: backend DML, `WorkflowService.apply`,
   rule evaluation, validation at submit + pre-apply, `POST …/apply` and
   `POST …/validate`, `bizkit apply`/`bizkit validate`, and the UI

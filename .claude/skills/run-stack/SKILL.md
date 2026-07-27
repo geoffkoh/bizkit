@@ -29,6 +29,12 @@ uv run bizkit --config bizkit.workspace.json list   # sanity check
 
 Files land in the current directory (`bizkit.workspace.json`, `bizkit.db`, and one `<profile>_target.db` per target — `sample_target.db`, or `risk_target.db` + `crm_target.db` for `enterprise`) — run from a scratch directory or delete them afterwards; the `.db` files are gitignored.
 
+`init-store` creates the schema by running the migrations to head (spec
+D46). If you already have a `bizkit.db` from an earlier checkout, the
+server will refuse to start with a revision mismatch — run `uv run bizkit
+store upgrade` (or just delete the scratch `.db` and re-seed). `uv run
+bizkit store current` shows where a store sits.
+
 ## 2. API server
 
 ```bash

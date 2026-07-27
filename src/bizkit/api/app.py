@@ -62,10 +62,10 @@ from bizkit.services.comments import CommentService
 from bizkit.services.importer import ImportMode, ImportReport, ImportService
 from bizkit.services.workflow import WorkflowService
 from bizkit.store.engine import (
-    create_schema,
     create_session_factory,
     create_store_engine,
 )
+from bizkit.store.schema import describe, verify_revision
 from bizkit.store.repositories import (
     SqlAlchemyAuditLog,
     SqlAlchemyChangesetRepository,
@@ -126,7 +126,7 @@ def create_app(
         workspace.config if workspace is not None else (config or BizkitConfig())
     )
     engine = create_store_engine(effective.store_url)
-    create_schema(engine)
+    verify_revision(engine)
     session_factory = create_session_factory(engine)
 
     access_policy = FileAccessPolicy(workspace.grants if workspace else [])
@@ -188,17 +188,23 @@ def create_app(
 
     @app.get("/api/ready", response_model=ReadyOut)
     def ready(request: Request) -> ReadyOut:
-        """Readiness probe: store reachable + config loaded."""
+        """Readiness probe: store reachable, at head revision, config loaded."""
         store_ok = True
+        revision: str | None = None
+        at_head = False
         try:
             with request.app.state.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+            state = describe(request.app.state.engine)
+            revision, at_head = state["current"], state["up_to_date"]
         except Exception:  # noqa: BLE001 - readiness must not raise
             store_ok = False
         fingerprint: str | None = request.app.state.fingerprint
         return ReadyOut(
-            status="ready" if store_ok else "degraded",
+            status="ready" if store_ok and at_head else "degraded",
             store=store_ok,
+            store_revision=revision,
+            store_up_to_date=at_head,
             config_fingerprint=fingerprint,
         )
 

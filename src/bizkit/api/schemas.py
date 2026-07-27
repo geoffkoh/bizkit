@@ -23,10 +23,16 @@ class HealthOut(BaseModel):
 
 
 class ReadyOut(BaseModel):
-    """Readiness response (store reachable + config loaded)."""
+    """Readiness response (store reachable + at head revision + config loaded).
+
+    ``store_revision`` reports the store's Alembic revision so operators can
+    see schema drift without opening a SQL client (spec D46).
+    """
 
     status: str
     store: bool
+    store_revision: str | None = None
+    store_up_to_date: bool = False
     config_fingerprint: str | None = None
 
 
