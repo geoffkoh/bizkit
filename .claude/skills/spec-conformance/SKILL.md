@@ -42,6 +42,10 @@ The controls are only real if a test fails when they break. Check for:
 - Concurrency: racing transitions — one winner, `ConcurrencyError` loser,
   single audit event (D31).
 - Lazy imports: core imports and fast suite pass with zero drivers (D3).
+- Store upgrades (D45): populated store survives `upgrade head` with rows
+  intact; app refuses to start when behind *or* ahead of head; no
+  `create_all` remains on any production path; `alembic check` reports no
+  drift between `store/models.py` and the migration chain.
 
 ## 4. Verify the quality gates
 

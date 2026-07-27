@@ -66,6 +66,23 @@ target's own constraints are exercised without changing anything. Applying
 is a *checker* right, and it is the only operation in bizkit that writes to
 a target database.
 
+### Upgrading the workflow store
+
+The store's schema is owned by forward-only migrations that ship inside the
+wheel. Upgrades are explicit — bizkit verifies the schema at startup and
+refuses to run against a mismatched store, but never migrates on its own:
+
+```bash
+bizkit store current               # revision, head, and whether they match
+bizkit store upgrade               # apply pending migrations
+bizkit store upgrade --sql         # emit the DDL for a DBA to apply instead
+bizkit store stamp <revision>      # record a DBA-applied upgrade
+```
+
+Migrations are additive within a release and never rewrite audit rows, so
+upgrading preserves existing changesets, decisions, comments, and the audit
+trail. Rolling back is restore-from-backup, not a downgrade script.
+
 ## Interfaces
 
 - **Python library** — `import bizkit`

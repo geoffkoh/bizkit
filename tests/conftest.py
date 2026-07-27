@@ -1,6 +1,6 @@
 """Shared fixtures: in-memory store, repositories, sample domain objects."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from sqlalchemy import Engine
@@ -10,7 +10,6 @@ from bizkit.domain.access import Grant, Role, Scope
 from bizkit.domain.changeset import ChangeItem, ChangeOp, Changeset
 from bizkit.domain.table import TableRef
 from bizkit.store.engine import (
-    create_schema,
     create_session_factory,
     create_store_engine,
 )
@@ -19,14 +18,40 @@ from bizkit.store.repositories import (
     SqlAlchemyChangesetRepository,
     SqlAlchemyDecisionRepository,
 )
+from bizkit.store.schema import upgrade
 from bizkit.workspace.access import FileAccessPolicy
 
 
 @pytest.fixture
+def migrate_store() -> Callable[[str], None]:
+    """Migrate a store URL to head, as a deployment would before starting.
+
+    `create_app` verifies the schema and refuses to migrate on its own
+    (spec D45), so anything constructing an app must do this first.
+
+    Returns:
+        A callable taking the store URL.
+    """
+
+    def _migrate(url: str) -> None:
+        engine = create_store_engine(url)
+        try:
+            upgrade(engine)
+        finally:
+            engine.dispose()
+
+    return _migrate
+
+
+@pytest.fixture
 def store_engine() -> Iterator[Engine]:
-    """In-memory SQLite store with schema created."""
+    """In-memory SQLite store migrated to head.
+
+    The fast suite runs the real migration chain rather than a shortcut, so
+    every revision is exercised on every run (spec D45).
+    """
     engine = create_store_engine("sqlite+pysqlite:///:memory:")
-    create_schema(engine)
+    upgrade(engine)
     yield engine
     engine.dispose()
 

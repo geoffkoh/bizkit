@@ -138,5 +138,7 @@ def test_existing_config_still_loads(
         json.dumps({"version": 1, "store_url": f"sqlite:///{tmp_path}/s.db"}),
         encoding="utf-8",
     )
+    # The store must exist before a command opens it (D45: no implicit migrate).
+    assert runner.invoke(cli, ["--config", str(workspace), "init-store"]).exit_code == 0
     result = runner.invoke(cli, ["--config", str(workspace), "list"])
     assert result.exit_code == 0, result.output

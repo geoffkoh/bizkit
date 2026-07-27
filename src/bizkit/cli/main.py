@@ -16,6 +16,7 @@ from pathlib import Path
 import click
 import uvicorn
 
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from bizkit.backends.base import BaseBackend
@@ -25,11 +26,11 @@ from bizkit.domain.access import Grant
 from bizkit.domain.changeset import ChangeItem, ChangeOp
 from bizkit.domain.table import TableRef
 from bizkit.domain.validation import ValidationReport
-from bizkit.exceptions import BizkitError
+from bizkit.exceptions import BizkitError, StoreSchemaError
 from bizkit.services.comments import CommentService
 from bizkit.services.workflow import WorkflowService
+from bizkit.store import schema as store_schema
 from bizkit.store.engine import (
-    create_schema,
     create_session_factory,
     create_store_engine,
 )
@@ -93,9 +94,11 @@ def cli(
         exists = Path(config_path).exists()
         # Never silently fall back: without the workspace there are no grants
         # and no targets, so the real symptom surfaces much later as a baffling
-        # AccessDenied or "no target profile". `init-store` is the one
-        # exemption — `--seed-sample` *writes* the file at this path.
-        if not exists and ctx.invoked_subcommand != "init-store":
+        # AccessDenied or "no target profile". Exempt: `init-store`, whose
+        # `--seed-sample` *writes* the file at this path, and the `store`
+        # group (D45) — schema plumbing must run before a workspace exists,
+        # and must not be blocked by one a pending upgrade would fix.
+        if not exists and ctx.invoked_subcommand not in {"init-store", "store"}:
             raise click.ClickException(
                 f"Workspace config {config_path!r} does not exist. Pass a path "
                 "to an existing YAML/JSON workspace file, or omit --config to "
@@ -112,6 +115,29 @@ def cli(
     )
 
 
+def _open_store(url: str) -> Engine:
+    """Open the store and refuse to use one whose schema is not at head.
+
+    Commands never migrate implicitly (spec D45) — an upgrade is an operator
+    decision, so a mismatch stops the command with the fix in the message.
+
+    Args:
+        url: Store URL.
+
+    Returns:
+        An engine bound to a store at the expected revision.
+
+    Raises:
+        click.ClickException: If the schema is missing, behind, or ahead.
+    """
+    engine = create_store_engine(url)
+    try:
+        store_schema.verify_revision(engine)
+    except StoreSchemaError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return engine
+
+
 @cli.command("init-store")
 @click.option(
     "--seed-sample",
@@ -120,12 +146,84 @@ def cli(
 )
 @click.pass_obj
 def init_store(obj: CLIContext, seed_sample: bool) -> None:
-    """Create the workflow store schema (dev path; see spec D34)."""
+    """Create the workflow store by migrating it to head (spec D45).
+
+    Creating a fresh store and upgrading an existing one are the same
+    operation, so this is `store upgrade` against an empty database.
+    """
     engine = create_store_engine(obj.config.store_url)
-    create_schema(engine)
-    click.echo(f"Store initialized at {obj.config.store_url}")
+    store_schema.upgrade(engine)
+    click.echo(
+        f"Store initialized at {obj.config.store_url} "
+        f"(revision {store_schema.head_revision()})"
+    )
     if seed_sample:
         _seed_sample(obj, engine_url=obj.config.store_url)
+
+
+@cli.group("store")
+def store_group() -> None:
+    """Workflow store schema management (spec D45)."""
+
+
+@store_group.command("upgrade")
+@click.option(
+    "--sql",
+    "as_sql",
+    is_flag=True,
+    help="Emit the DDL instead of running it, for a DBA to apply.",
+)
+@click.option(
+    "--revision",
+    default="head",
+    show_default=True,
+    help="Target revision (or 'from:to' range with --sql).",
+)
+@click.pass_obj
+def store_upgrade(obj: CLIContext, as_sql: bool, revision: str) -> None:
+    """Apply pending migrations to the workflow store."""
+    if as_sql:
+        store_schema.emit_sql(obj.config.store_url, revision)
+        return
+    engine = create_store_engine(obj.config.store_url)
+    before = store_schema.current_revision(engine)
+    store_schema.upgrade(engine, revision)
+    after = store_schema.current_revision(engine)
+    if before == after:
+        click.echo(f"Already at revision {after}; nothing to do.")
+    else:
+        click.echo(f"Upgraded store {before or '(empty)'} -> {after}.")
+
+
+@store_group.command("current")
+@click.pass_obj
+def store_current(obj: CLIContext) -> None:
+    """Show the store's schema revision and whether it is at head."""
+    engine = create_store_engine(obj.config.store_url)
+    state = store_schema.describe(engine)
+    click.echo(f"current: {state['current'] or '(no schema)'}")
+    click.echo(f"head:    {state['head']}")
+    click.echo(f"status:  {'up to date' if state['up_to_date'] else 'UPGRADE NEEDED'}")
+
+
+@store_group.command("history")
+def store_history() -> None:
+    """List the migration chain, oldest first."""
+    for revision, description in store_schema.history():
+        click.echo(f"{revision}  {description}")
+
+
+@store_group.command("stamp")
+@click.argument("revision")
+@click.pass_obj
+def store_stamp(obj: CLIContext, revision: str) -> None:
+    """Record REVISION as applied without running it.
+
+    For a store upgraded out of band from `store upgrade --sql` output.
+    """
+    engine = create_store_engine(obj.config.store_url)
+    store_schema.stamp(engine, revision)
+    click.echo(f"Stamped store at revision {revision}.")
 
 
 def _seed_sample(obj: CLIContext, engine_url: str) -> None:
@@ -375,7 +473,6 @@ def _seed_sample(obj: CLIContext, engine_url: str) -> None:
     loaded = load_workspace(workspace_path)
 
     engine = create_store_engine(engine_url)
-    create_schema(engine)
     factory = create_session_factory(engine)
     fx = TableRef(backend="sample", table="fx_rates")
     limits = TableRef(backend="sample", table="trading_limits")
@@ -562,8 +659,7 @@ def _seed_sample(obj: CLIContext, engine_url: str) -> None:
 @click.pass_obj
 def list_changesets(obj: CLIContext) -> None:
     """List changesets in the workflow store."""
-    engine = create_store_engine(obj.config.store_url)
-    create_schema(engine)
+    engine = _open_store(obj.config.store_url)
     factory = create_session_factory(engine)
     with factory() as session:
         repo = SqlAlchemyChangesetRepository(session)
@@ -602,8 +698,7 @@ def serve(obj: CLIContext, host: str, port: int, use_reload: bool) -> None:
 @click.pass_obj
 def expire(obj: CLIContext) -> None:
     """Sweep overdue changesets into EXPIRED (spec D21)."""
-    engine = create_store_engine(obj.config.store_url)
-    create_schema(engine)
+    engine = _open_store(obj.config.store_url)
     factory = create_session_factory(engine)
     registry = FileTableRegistry(obj.workspace.tables) if obj.workspace else None
     grants: list[Grant] = obj.workspace.grants if obj.workspace else []
@@ -688,8 +783,7 @@ def apply(obj: CLIContext, changeset_id: str, actor: str, dry_run: bool) -> None
     approval, then hands the write to the backend. On failure the changeset
     lands in FAILED and can be reworked or retried.
     """
-    engine = create_store_engine(obj.config.store_url)
-    create_schema(engine)
+    engine = _open_store(obj.config.store_url)
     factory = create_session_factory(engine)
     with factory() as session, _domain_errors():
         service = _workflow_service(obj, session)
@@ -729,8 +823,7 @@ def apply(obj: CLIContext, changeset_id: str, actor: str, dry_run: bool) -> None
 @click.pass_obj
 def validate(obj: CLIContext, changeset_id: str) -> None:
     """Run a changeset's rule set and report, changing nothing (D12)."""
-    engine = create_store_engine(obj.config.store_url)
-    create_schema(engine)
+    engine = _open_store(obj.config.store_url)
     factory = create_session_factory(engine)
     with factory() as session, _domain_errors():
         service = _workflow_service(obj, session)

@@ -1,6 +1,7 @@
 """API smoke tests over the ASGI transport (no server process)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 
 import httpx
 import pytest
@@ -10,8 +11,12 @@ from bizkit.config import BizkitConfig
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(BizkitConfig(store_url="sqlite+pysqlite:///:memory:"))
+async def client(
+    tmp_path: Path, migrate_store: Callable[[str], None]
+) -> AsyncIterator[httpx.AsyncClient]:
+    store_url = f"sqlite+pysqlite:///{tmp_path / 'store.db'}"
+    migrate_store(store_url)
+    app = create_app(BizkitConfig(store_url=store_url))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test"
